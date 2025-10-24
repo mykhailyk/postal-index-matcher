@@ -60,3 +60,12 @@ data/*.xls
 
 # Test files
 test_*.py
+
+
+cache/
+*.pkl
+*.pyc
+__pycache__/
+.idea/
+.vscode/
+*.log

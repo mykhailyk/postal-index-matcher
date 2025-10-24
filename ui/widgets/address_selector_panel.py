@@ -1,12 +1,13 @@
 """
-Панель підбору адреси
+Панель підбору адреси - фінальна версія з popup автокомплітом
 """
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-    QLineEdit, QPushButton, QGroupBox, QFormLayout, QCompleter, QComboBox
+    QLineEdit, QPushButton, QFormLayout, QCompleter, QComboBox, 
+    QFrame, QSpinBox, QListWidget
 )
 from PyQt5.QtCore import pyqtSignal, Qt
-import config
+from utils.ukrposhta_index import UkrposhtaIndex
 
 
 class AddressSelectorPanel(QWidget):
@@ -22,92 +23,266 @@ class AddressSelectorPanel(QWidget):
         self.city_completer = None
         self.current_city_records = []
         
+        self.manual_font_size = 12
+        self.cascade_font_size = 12
+        
+        self.ukr_index = UkrposhtaIndex()
+        self.all_streets_cache = []
+        
         self.init_ui()
     
     def init_ui(self):
         """Ініціалізує UI"""
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(5, 5, 5, 5)
+        main_layout.setSpacing(10)
+        
+        # Контроль шрифтів
+        font_controls = QHBoxLayout()
+        
+        manual_label = QLabel("Шрифт (ручне):")
+        manual_label.setStyleSheet("font-size: 10px; font-weight: bold;")
+        font_controls.addWidget(manual_label)
+        
+        self.manual_font_spinbox = QSpinBox()
+        self.manual_font_spinbox.setMinimum(10)
+        self.manual_font_spinbox.setMaximum(16)
+        self.manual_font_spinbox.setValue(12)
+        self.manual_font_spinbox.setSuffix(" px")
+        self.manual_font_spinbox.valueChanged.connect(self.update_manual_font_size)
+        font_controls.addWidget(self.manual_font_spinbox)
+        
+        font_controls.addSpacing(20)
+        
+        cascade_label = QLabel("Шрифт (пошук):")
+        cascade_label.setStyleSheet("font-size: 10px; font-weight: bold;")
+        font_controls.addWidget(cascade_label)
+        
+        self.cascade_font_spinbox = QSpinBox()
+        self.cascade_font_spinbox.setMinimum(10)
+        self.cascade_font_spinbox.setMaximum(16)
+        self.cascade_font_spinbox.setValue(12)
+        self.cascade_font_spinbox.setSuffix(" px")
+        self.cascade_font_spinbox.valueChanged.connect(self.update_cascade_font_size)
+        font_controls.addWidget(self.cascade_font_spinbox)
+        
+        font_controls.addStretch()
+        main_layout.addLayout(font_controls)
+        
+        # Дві панелі
+        panels_layout = QHBoxLayout()
+        
+        left_panel = self.create_manual_input_panel()
+        panels_layout.addWidget(left_panel, 1)
+        
+        line = QFrame()
+        line.setFrameShape(QFrame.VLine)
+        line.setStyleSheet("background-color: #ccc;")
+        panels_layout.addWidget(line)
+        
+        right_panel = self.create_cascade_panel()
+        panels_layout.addWidget(right_panel, 1)
+        
+        main_layout.addLayout(panels_layout)
+        self.setLayout(main_layout)
+    
+    def create_manual_input_panel(self):
+        """Ліва панель - ручне введення"""
+        panel = QWidget()
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(3)
         
-        # Заголовок
-        header = QLabel("🔍 Підбір адреси")
-        header.setStyleSheet("font-weight: bold; font-size: 13px; padding: 5px;")
+        header = QLabel("🔍 Ручне введення")
+        header.setStyleSheet("font-weight: bold; font-size: 13px;")
         layout.addWidget(header)
         
-        # Форма вводу
         form = QFormLayout()
-        form.setSpacing(5)
-        form.setContentsMargins(5, 5, 5, 5)
         
-        # Область (тільки для читання, оновлюється автоматично)
         self.region_input = QLineEdit()
         self.region_input.setPlaceholderText("Автоматично")
-        self.region_input.setStyleSheet("padding: 5px; font-size: 11px; background-color: #f0f0f0;")
         self.region_input.setReadOnly(True)
+        self.region_input.setStyleSheet("background-color: #f0f0f0;")
         form.addRow("Область:", self.region_input)
         
-        # Місто
         self.city_input = QLineEdit()
         self.city_input.setPlaceholderText("Введіть місто")
-        self.city_input.setStyleSheet("padding: 5px; font-size: 11px;")
         self.city_input.textChanged.connect(self.on_city_changed)
         self.city_input.returnPressed.connect(self.on_apply_index)
         form.addRow("Місто:", self.city_input)
         
-        # Вулиця
         self.street_input = QLineEdit()
         self.street_input.setPlaceholderText("Введіть вулицю")
-        self.street_input.setStyleSheet("padding: 5px; font-size: 11px;")
         self.street_input.textChanged.connect(self.on_street_changed)
         self.street_input.returnPressed.connect(self.on_apply_index)
         form.addRow("Вулиця:", self.street_input)
         
-        # Випадашка для будинків (спочатку прихована)
         self.buildings_combo = QComboBox()
-        self.buildings_combo.setStyleSheet("padding: 5px; font-size: 11px;")
         self.buildings_combo.currentIndexChanged.connect(self.on_building_selected)
         self.buildings_label = QLabel("Будинки:")
         form.addRow(self.buildings_label, self.buildings_combo)
         self.buildings_combo.hide()
         self.buildings_label.hide()
         
-        # Індекс (великий, виділений)
         self.index_input = QLineEdit()
         self.index_input.setPlaceholderText("00000")
-        self.index_input.setStyleSheet(
-            "padding: 10px; font-size: 20px; font-weight: bold; "
-            "border: 2px solid #2196F3; border-radius: 5px; text-align: center;"
-        )
         self.index_input.setMaxLength(5)
         self.index_input.setAlignment(Qt.AlignCenter)
         self.index_input.returnPressed.connect(self.on_apply_index)
+        self.index_input.setStyleSheet(
+            "padding: 6px; font-size: 16px; font-weight: bold; "
+            "border: 2px solid #2196F3; border-radius: 5px;"
+        )
         form.addRow("→ Індекс:", self.index_input)
         
         layout.addLayout(form)
         
-        # Кнопка застосування
-        apply_btn = QPushButton("✓ Застосувати індекс (Enter)")
+        apply_btn = QPushButton("✓ Застосувати (Enter)")
         apply_btn.clicked.connect(self.on_apply_index)
         apply_btn.setStyleSheet(
-            "background-color: #4CAF50; color: white; padding: 8px; "
-            "font-weight: bold; font-size: 11px; margin: 5px;"
+            "background-color: #4CAF50; color: white; padding: 8px; font-weight: bold;"
         )
         layout.addWidget(apply_btn)
         
-        # Підказка
-        hint = QLabel("💡 Введіть місто → вулицю → Enter застосує індекс")
-        hint.setStyleSheet("color: #666; font-size: 9px; padding: 5px;")
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
+        layout.addStretch()
+        panel.setLayout(layout)
+        return panel
+    
+    def create_cascade_panel(self):
+        """Права панель - пошук Укрпошти з POPUP"""
+        panel = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
         
-        self.setLayout(layout)
+        header = QLabel("📮 Пошук індексу")
+        header.setStyleSheet("font-weight: bold; font-size: 13px;")
+        layout.addWidget(header)
+        
+        form = QVBoxLayout()
+        
+        # === МІСТО ===
+        city_label = QLabel("Населений пункт:")
+        form.addWidget(city_label)
+        
+        self.cascade_city_input = QLineEdit()
+        self.cascade_city_input.setPlaceholderText("Введіть населений пункт (мін. 3 символи)")
+        self.cascade_city_input.textChanged.connect(self.on_cascade_city_typed)
+        form.addWidget(self.cascade_city_input)
+        
+        # POPUP LIST (плаваючий, НЕ блокує введення)
+        self.cascade_city_list = QListWidget(self)
+        self.cascade_city_list.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)  # ⬅️ ЗМІНЕНО
+        self.cascade_city_list.setAttribute(Qt.WA_ShowWithoutActivating)  # ⬅️ ДОДАНО (не забирає фокус)
+        self.cascade_city_list.setMinimumHeight(200)
+        self.cascade_city_list.setMaximumHeight(300)
+        self.cascade_city_list.setWordWrap(True)
+        self.cascade_city_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.cascade_city_list.setStyleSheet("""
+            QListWidget {
+                border: 2px solid #2196F3;
+                border-radius: 3px;
+                background-color: white;
+                font-size: 11px;
+            }
+            QListWidget::item {
+                padding: 5px;
+                border-bottom: 1px solid #f0f0f0;
+            }
+            QListWidget::item:hover {
+                background-color: #e3f2fd;
+            }
+            QListWidget::item:selected {
+                background-color: #2196F3;
+                color: white;
+            }
+        """)
+        self.cascade_city_list.hide()
+        self.cascade_city_list.itemClicked.connect(self.on_cascade_city_clicked)
+        
+        # === ВУЛИЦЯ ===
+        street_label = QLabel("Вулиця:")
+        form.addWidget(street_label)
+        
+        self.cascade_street_input = QLineEdit()
+        self.cascade_street_input.setPlaceholderText("Введіть вулицю")
+        self.cascade_street_input.textChanged.connect(self.on_cascade_street_typed)
+        self.cascade_street_input.setEnabled(False)
+        form.addWidget(self.cascade_street_input)
+        
+        # POPUP LIST (плаваючий, НЕ блокує введення)
+        self.cascade_street_list = QListWidget(self)
+        self.cascade_street_list.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)  # ⬅️ ЗМІНЕНО
+        self.cascade_street_list.setAttribute(Qt.WA_ShowWithoutActivating)  # ⬅️ ДОДАНО
+        self.cascade_street_list.setMinimumHeight(200)
+        self.cascade_street_list.setMaximumHeight(300)
+        self.cascade_street_list.setWordWrap(True)
+        self.cascade_street_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.cascade_street_list.setStyleSheet("""
+            QListWidget {
+                border: 2px solid #FF9800;
+                border-radius: 3px;
+                background-color: white;
+                font-size: 11px;
+            }
+            QListWidget::item {
+                padding: 5px;
+                border-bottom: 1px solid #f0f0f0;
+            }
+            QListWidget::item:hover {
+                background-color: #fff3e0;
+            }
+            QListWidget::item:selected {
+                background-color: #FF9800;
+                color: white;
+            }
+        """)
+        self.cascade_street_list.hide()
+        self.cascade_street_list.itemClicked.connect(self.on_cascade_street_clicked)
+        
+        # === БУДИНОК ===
+        building_label = QLabel("Будинок:")
+        form.addWidget(building_label)
+        
+        self.cascade_building_combo = QComboBox()
+        self.cascade_building_combo.currentTextChanged.connect(self.on_cascade_building_changed)
+        self.cascade_building_combo.hide()
+        form.addWidget(self.cascade_building_combo)
+        
+        # === ІНДЕКС ===
+        index_label = QLabel("→ Індекс:")
+        form.addWidget(index_label)
+        
+        self.cascade_index_input = QLineEdit()
+        self.cascade_index_input.setPlaceholderText("00000")
+        self.cascade_index_input.setMaxLength(5)
+        self.cascade_index_input.setAlignment(Qt.AlignCenter)
+        self.cascade_index_input.setReadOnly(True)
+        self.cascade_index_input.setStyleSheet(
+            "padding: 10px; font-size: 20px; font-weight: bold; "
+            "border: 2px solid #FF9800; border-radius: 5px; background-color: #FFF3E0;"
+        )
+        form.addWidget(self.cascade_index_input)
+        
+        layout.addLayout(form)
+        
+        apply_btn = QPushButton("✓ Застосувати індекс")
+        apply_btn.clicked.connect(self.on_cascade_apply_index)
+        apply_btn.setStyleSheet(
+            "background-color: #FF9800; color: white; padding: 10px; font-weight: bold;"
+        )
+        layout.addWidget(apply_btn)
+        
+        layout.addStretch()
+        panel.setLayout(layout)
+        return panel
     
     def set_magistral_cache(self, magistral_records):
-        """Встановлює кеш magistral і створює автокомпліт"""
+        """Встановлює кеш magistral"""
         self.magistral_cache = magistral_records
         
-        # Створюємо словник міст з районами
+        if not self.ukr_index.load():
+            self.ukr_index.build(magistral_records)
+        
+        # Для лівої панелі
         cities_with_districts = {}
         for record in magistral_records:
             if hasattr(record, 'city') and record.city:
@@ -119,7 +294,6 @@ class AddressSelectorPanel(QWidget):
                 if district:
                     cities_with_districts[city_key].add(district)
         
-        # Формуємо список міст з районами в дужках
         city_list = []
         for record in magistral_records:
             if hasattr(record, 'city') and record.city:
@@ -135,15 +309,172 @@ class AddressSelectorPanel(QWidget):
                 if city_display not in city_list:
                     city_list.append(city_display)
         
-        # Створюємо автокомпліт для міст
         city_list = sorted(list(set(city_list)))
         self.city_completer = QCompleter(city_list, self)
         self.city_completer.setCaseSensitivity(Qt.CaseInsensitive)
         self.city_completer.setFilterMode(Qt.MatchContains)
         self.city_input.setCompleter(self.city_completer)
     
+    # ==================== КАСКАДНА ФОРМА (УКРПОШТА) ====================
+    
+    def on_cascade_city_typed(self, text):
+        """Введення міста з POPUP"""
+        # ОЧИЩЕННЯ
+        self.cascade_street_input.clear()
+        self.cascade_street_input.setEnabled(False)
+        self.cascade_street_list.hide()
+        self.cascade_building_combo.clear()
+        self.cascade_building_combo.hide()
+        self.cascade_index_input.clear()
+        
+        if len(text) < 3:
+            self.cascade_city_list.clear()
+            self.cascade_city_list.hide()
+            return
+        
+        matching = self.ukr_index.search_cities(text)
+        
+        self.cascade_city_list.clear()
+        if matching:
+            for city in matching:
+                self.cascade_city_list.addItem(city)
+            
+            # ПОЗИЦІОНУЄМО popup під полем
+            pos = self.cascade_city_input.mapToGlobal(self.cascade_city_input.rect().bottomLeft())
+            self.cascade_city_list.move(pos)
+            self.cascade_city_list.setFixedWidth(self.cascade_city_input.width())
+            self.cascade_city_list.show()
+            self.cascade_city_list.raise_()
+        else:
+            self.cascade_city_list.hide()
+    
+    def on_cascade_city_clicked(self, item):
+        """Клік по місту - ПЕРЕХІД НА ВУЛИЦЮ"""
+        city_full = item.text()
+        
+        self.cascade_city_input.setText(city_full)
+        self.cascade_city_list.hide()
+        
+        # Отримуємо вулиці
+        streets = self.ukr_index.get_streets(city_full)
+        self.all_streets_cache = streets
+        
+        # Активуємо поле вулиці
+        self.cascade_street_input.setEnabled(True)
+        self.cascade_street_input.clear()
+        
+        self.cascade_building_combo.clear()
+        self.cascade_building_combo.hide()
+        self.cascade_index_input.clear()
+        
+        # ПЕРЕХІД на вулицю + показ перших 10 вулиць
+        self.cascade_street_input.setFocus()
+        
+        # Показуємо перші 10 вулиць
+        self.cascade_street_list.clear()
+        for street in streets[:10]:
+            self.cascade_street_list.addItem(street)
+        
+        if streets:
+            # Позиціонуємо popup під полем вулиці
+            pos = self.cascade_street_input.mapToGlobal(self.cascade_street_input.rect().bottomLeft())
+            self.cascade_street_list.move(pos)
+            self.cascade_street_list.setFixedWidth(self.cascade_street_input.width())
+            self.cascade_street_list.show()
+            self.cascade_street_list.raise_()
+    
+    def on_cascade_street_typed(self, text):
+        """Введення вулиці з POPUP"""
+        if not hasattr(self, 'all_streets_cache') or not self.all_streets_cache:
+            return
+        
+        if not text:
+            filtered = self.all_streets_cache[:10]
+        else:
+            text_lower = text.lower()
+            filtered = [s for s in self.all_streets_cache if text_lower in s.lower()][:10]
+        
+        self.cascade_street_list.clear()
+        if filtered:
+            for street in filtered:
+                self.cascade_street_list.addItem(street)
+            
+            # ПОЗИЦІОНУЄМО popup під полем
+            pos = self.cascade_street_input.mapToGlobal(self.cascade_street_input.rect().bottomLeft())
+            self.cascade_street_list.move(pos)
+            self.cascade_street_list.setFixedWidth(self.cascade_street_input.width())
+            self.cascade_street_list.show()
+            self.cascade_street_list.raise_()
+        else:
+            self.cascade_street_list.hide()
+    
+    def on_cascade_street_clicked(self, item):
+        """Клік по вулиці"""
+        street_text = item.text()
+        
+        self.cascade_street_input.setText(street_text)
+        self.cascade_street_list.hide()
+        
+        city_full = self.cascade_city_input.text()
+        
+        # DEBUG
+        print(f"🏠 Шукаємо будинки: місто='{city_full}', вулиця='{street_text}'")
+        
+        buildings_map = self.ukr_index.get_buildings(city_full, street_text)
+        
+        print(f"📦 Знайдено індексів: {len(buildings_map)}")
+        if buildings_map:
+            print(f"   Перші 3: {list(buildings_map.items())[:3]}")
+        
+        if len(buildings_map) == 0:
+            # Немає індексів
+            self.cascade_index_input.clear()
+            self.cascade_building_combo.hide()
+        elif len(buildings_map) == 1:
+            # Один індекс
+            idx = list(buildings_map.keys())[0]
+            self.cascade_index_input.setText(idx)
+            self.cascade_building_combo.hide()
+            print(f"✅ Встановлено індекс: {idx}")
+        else:
+            # Декілька індексів
+            self.cascade_building_combo.clear()
+            self.cascade_building_combo.addItem("-- Оберіть будинок --")
+            
+            for idx, buildings in sorted(buildings_map.items()):
+                if buildings:
+                    self.cascade_building_combo.addItem(f"{buildings} → {idx}")
+                else:
+                    self.cascade_building_combo.addItem(f"Всі → {idx}")
+            
+            self.cascade_building_combo.show()
+            self.cascade_building_combo.setFocus()
+            
+            # Встановлюємо перший індекс
+            first_idx = min(buildings_map.keys())
+            self.cascade_index_input.setText(first_idx)
+            print(f"📋 Показано випадашку з {len(buildings_map)} варіантами")
+
+    def on_cascade_building_changed(self, text):
+        """Будинок обраний"""
+        if not text or text == "-- Оберіть будинок --":
+            self.cascade_index_input.clear()
+            return
+        
+        if '→' in text:
+            idx = text.split('→')[-1].strip()
+            self.cascade_index_input.setText(idx)
+    
+    def on_cascade_apply_index(self):
+        """Застосовує індекс"""
+        index = self.cascade_index_input.text().strip()
+        if index and len(index) == 5:
+            self.index_double_clicked.emit(index)
+    
+    # ==================== РУЧНА ФОРМА ====================
+    
     def on_city_changed(self):
-        """Викликається при зміні міста"""
+        """Зміна міста"""
         city_text = self.city_input.text().strip()
         
         if not city_text:
@@ -155,13 +486,11 @@ class AddressSelectorPanel(QWidget):
             self.current_city_records = []
             return
         
-        # Видаляємо район з дужок якщо є
         city_clean = city_text.split('(')[0].strip()
         district_clean = None
         if '(' in city_text:
             district_clean = city_text.split('(')[1].strip(')')
         
-        # Шукаємо всі записи для цього міста
         self.current_city_records = []
         for record in self.magistral_cache:
             if hasattr(record, 'city') and record.city and city_clean.lower() == record.city.lower():
@@ -176,20 +505,16 @@ class AddressSelectorPanel(QWidget):
                     self.current_city_records.append(record)
         
         if self.current_city_records:
-            # Оновлюємо область
             first_record = self.current_city_records[0]
             region = getattr(first_record, 'region', None)
             self.region_input.setText(region if region else "")
             
-            # Встановлюємо мінімальний індекс міста
             self.set_minimum_city_index()
             
-            # Створюємо автокомпліт для вулиць цього міста
             unique_streets = set()
             for record in self.current_city_records:
                 street = getattr(record, 'street', None)
                 if street:
-                    # Видаляємо префікс
                     street_clean = street
                     for prefix in ['вул. ', 'провул. ', 'пров. ', 'бульв. ', 'б-р ', 'просп. ', 'пр. ', 'пл. ']:
                         if street_clean.startswith(prefix):
@@ -207,7 +532,7 @@ class AddressSelectorPanel(QWidget):
             self.index_input.setText("00000")
     
     def on_street_changed(self):
-        """Викликається при зміні вулиці"""
+        """Зміна вулиці"""
         street_text = self.street_input.text().strip()
         
         if not street_text or not self.current_city_records:
@@ -219,7 +544,6 @@ class AddressSelectorPanel(QWidget):
             self.buildings_label.hide()
             return
         
-        # Шукаємо записи з цією вулицею
         matching_records = []
         for record in self.current_city_records:
             street = getattr(record, 'street', None)
@@ -239,11 +563,9 @@ class AddressSelectorPanel(QWidget):
             self.buildings_label.hide()
             return
         
-        # ВИКОРИСТОВУЄМО city_index
         unique_indexes = {}
         for record in matching_records:
             idx = getattr(record, 'city_index', None)
-            
             if idx and str(idx) not in unique_indexes:
                 unique_indexes[str(idx)] = record
         
@@ -277,7 +599,7 @@ class AddressSelectorPanel(QWidget):
             self.index_input.setText(min_idx)
     
     def set_minimum_city_index(self):
-        """Встановлює мінімальний індекс для міста"""
+        """Мінімальний індекс міста"""
         if not self.current_city_records:
             self.index_input.setText("00000")
             return
@@ -289,13 +611,12 @@ class AddressSelectorPanel(QWidget):
                 all_indexes.append(str(idx))
         
         if all_indexes:
-            min_index = min(all_indexes)
-            self.index_input.setText(min_index)
+            self.index_input.setText(min(all_indexes))
         else:
             self.index_input.setText("00000")
     
     def on_building_selected(self):
-        """Викликається при виборі будинків"""
+        """Будинок обраний"""
         idx = self.buildings_combo.currentData()
         if idx:
             self.index_input.setText(idx)
@@ -307,32 +628,28 @@ class AddressSelectorPanel(QWidget):
         
         best_result = results[0]
         
-        # ЗАВЖДИ ОНОВЛЮЄМО З НАЙКРАЩОГО РЕЗУЛЬТАТУ
         self.region_input.setText(best_result.get('region', ''))
         self.city_input.setText(best_result.get('city', ''))
         
-        # Видаляємо префікс з вулиці
         street = best_result.get('street', '')
         for prefix in ['вул. ', 'провул. ', 'пров. ', 'бульв. ', 'б-р ', 'просп. ', 'пр. ', 'пл. ']:
             if street.startswith(prefix):
                 street = street[len(prefix):]
                 break
+        
         self.street_input.setText(street)
         
-        # Індекс
         if best_result.get('index'):
             self.index_input.setText(best_result.get('index', ''))
         
         self.buildings_combo.hide()
         self.buildings_label.hide()
         
-        # Фокус на індекс
         self.index_input.setFocus()
         self.index_input.selectAll()
-
     
     def on_apply_index(self):
-        """Застосовує введений індекс"""
+        """Застосовує індекс"""
         index = self.index_input.text().strip()
         if index and len(index) == 5:
             self.index_double_clicked.emit(index)
@@ -346,3 +663,27 @@ class AddressSelectorPanel(QWidget):
         self.buildings_combo.hide()
         self.buildings_label.hide()
         self.current_city_records = []
+    
+    # ==================== ШРИФТИ ====================
+    
+    def update_manual_font_size(self, size):
+        """Оновлює шрифт ручної форми"""
+        self.manual_font_size = size
+        self.city_input.setStyleSheet(f"padding: 5px; font-size: {size}px;")
+        self.street_input.setStyleSheet(f"padding: 5px; font-size: {size}px;")
+        self.buildings_combo.setStyleSheet(f"padding: 5px; font-size: {size}px;")
+        self.index_input.setStyleSheet(
+            f"padding: 6px; font-size: {size + 4}px; font-weight: bold; "
+            "border: 2px solid #2196F3; border-radius: 5px;"
+        )
+    
+    def update_cascade_font_size(self, size):
+        """Оновлює шрифт каскадної форми"""
+        self.cascade_font_size = size
+        self.cascade_city_input.setStyleSheet(f"padding: 6px; font-size: {size}px;")
+        self.cascade_street_input.setStyleSheet(f"padding: 6px; font-size: {size}px;")
+        self.cascade_building_combo.setStyleSheet(f"padding: 6px; font-size: {size}px;")
+        self.cascade_index_input.setStyleSheet(
+            f"padding: 10px; font-size: {size + 8}px; font-weight: bold; "
+            "border: 2px solid #FF9800; border-radius: 5px; background-color: #FFF3E0;"
+        )

@@ -11,7 +11,7 @@ def main():
     """Точка входу програми"""
     logger = Logger()
     logger.info("=" * 80)
-    logger.info("Запуск програми Address Matcher v2.0")
+    logger.info("Запуск програми Address Matcher v2.1")
     logger.info("=" * 80)
     
     try:

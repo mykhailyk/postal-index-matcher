@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QPushButton, QLabel, QTableWidget, QTableWidgetItem, QFileDialog,
     QMessageBox, QToolBar, QAction, QProgressBar, QHeaderView,
-    QAbstractItemView, QFrame, QComboBox, QShortcut, QApplication
+    QAbstractItemView, QFrame, QComboBox, QShortcut, QApplication, QCheckBox, QSpinBox
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor, QKeySequence
@@ -87,14 +87,13 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.progress_bar)
 
         self.setup_shortcuts()
-
     def create_compact_top_panel(self):
         """Компактна панель управління"""
         panel = QFrame()
-        panel.setMaximumHeight(100)
+        panel.setMaximumHeight(60)
         layout = QVBoxLayout()
         layout.setSpacing(3)
-        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setContentsMargins(5, 5, 5, 5)
 
         row1 = QHBoxLayout()
 
@@ -120,50 +119,34 @@ class MainWindow(QMainWindow):
         self.save_btn = QPushButton("💾 Зберегти")
         self.save_btn.setEnabled(False)
         self.save_btn.clicked.connect(self.save_excel_file)
-        self.save_btn.setStyleSheet("background-color: #4CAF50; color: white; padding: 4px 10px; font-size: 11px;")
+        self.save_btn.setStyleSheet("background-color: #4CAF50; color: white; padding: 4px 10px; font-weight: bold; font-size: 11px;")
         row1.addWidget(self.save_btn)
+        
+        self.save_as_btn = QPushButton("💾 Зберегти як...")
+        self.save_as_btn.setEnabled(False)
+        self.save_as_btn.clicked.connect(self.save_excel_file_as)
+        self.save_as_btn.setStyleSheet("padding: 4px 10px; font-size: 11px;")
+        row1.addWidget(self.save_as_btn)
+        
+        # ДОДАНО: КНОПКА "ОНОВИТИ КЕШ"
+        refresh_cache_btn = QPushButton("🔄 Оновити кеш")
+        refresh_cache_btn.clicked.connect(self.refresh_cache)
+        refresh_cache_btn.setStyleSheet("padding: 4px 10px; font-size: 11px; background-color: #FF9800; color: white;")
+        refresh_cache_btn.setToolTip("Оновити кеш magistral.csv та індекс Укрпошти")
+        row1.addWidget(refresh_cache_btn)
+        
+        self.save_old_index_checkbox = QCheckBox("Зберігати старий індекс")
+        self.save_old_index_checkbox.setChecked(False)
+        self.save_old_index_checkbox.setStyleSheet("font-size: 10px;")
+        self.save_old_index_checkbox.setToolTip("Якщо увімкнено - колонка 'Старий індекс' буде збережена у файл")
+        row1.addWidget(self.save_old_index_checkbox)
 
-        stats_btn = QPushButton("📊 Статистика")
-        stats_btn.clicked.connect(self.show_statistics)
-        stats_btn.setStyleSheet("padding: 4px 10px; font-size: 11px;")
-        row1.addWidget(stats_btn)
-
+        row1.addStretch()
         layout.addLayout(row1)
-
-        row2 = QHBoxLayout()
-
-        self.undo_btn = QPushButton("⬅ Назад")
-        self.undo_btn.setShortcut(QKeySequence.Undo)
-        self.undo_btn.clicked.connect(self.undo)
-        self.undo_btn.setEnabled(False)
-        self.undo_btn.setStyleSheet("padding: 4px 10px; font-size: 11px;")
-        row2.addWidget(self.undo_btn)
-
-        self.redo_btn = QPushButton("➡ Вперед")
-        self.redo_btn.setShortcut(QKeySequence.Redo)
-        self.redo_btn.clicked.connect(self.redo)
-        self.redo_btn.setEnabled(False)
-        self.redo_btn.setStyleSheet("padding: 4px 10px; font-size: 11px;")
-        row2.addWidget(self.redo_btn)
-
-        row2.addSpacing(20)
-
-        filter_label = QLabel("Фільтр:")
-        filter_label.setStyleSheet("font-size: 11px;")
-        row2.addWidget(filter_label)
-
-        self.filter_combo = QComboBox()
-        self.filter_combo.addItems(["Всі рядки", "Тільки оброблені", "Тільки необроблені"])
-        self.filter_combo.setStyleSheet("font-size: 11px;")
-        self.filter_combo.currentTextChanged.connect(self.apply_filter)
-        row2.addWidget(self.filter_combo)
-
-        row2.addStretch()
-
-        layout.addLayout(row2)
 
         panel.setLayout(layout)
         return panel
+
 
     def create_table_panel(self):
         """Панель з таблицею"""
@@ -177,6 +160,20 @@ class MainWindow(QMainWindow):
         label = QLabel("📋 База даних")
         label.setStyleSheet("font-weight: bold; font-size: 13px;")
         header.addWidget(label)
+
+        # ДОДАНО: Контроль розміру шрифту таблиці
+        font_label = QLabel("Шрифт:")
+        font_label.setStyleSheet("font-size: 10px; margin-left: 10px;")
+        header.addWidget(font_label)
+        
+        self.table_font_spinbox = QSpinBox()
+        self.table_font_spinbox.setMinimum(8)
+        self.table_font_spinbox.setMaximum(16)
+        self.table_font_spinbox.setValue(10)
+        self.table_font_spinbox.setSuffix(" px")
+        self.table_font_spinbox.setStyleSheet("font-size: 10px; padding: 2px;")
+        self.table_font_spinbox.valueChanged.connect(self.update_table_font_size)
+        header.addWidget(self.table_font_spinbox)
 
         header.addStretch()
 
@@ -220,6 +217,11 @@ class MainWindow(QMainWindow):
         panel.setLayout(layout)
         return panel
 
+    def update_table_font_size(self, size):
+        """Оновлює розмір шрифту таблиці"""
+        self.table.setStyleSheet(f"font-size: {size}px;")
+
+
     def create_compact_right_panel(self):
         """Компактна права панель"""
         panel = QSplitter(Qt.Vertical)
@@ -230,8 +232,7 @@ class MainWindow(QMainWindow):
         panel.addWidget(self.address_panel)
 
         self.results_panel = ResultsPanel()
-        self.results_panel.apply_index_clicked.connect(self.apply_selected_index)
-        self.results_panel.fix_address_clicked.connect(self.fix_address)
+        self.results_panel.index_double_clicked.connect(self.apply_suggested_index)  # ЗМІНЕНО: тільки цей сигнал
         panel.addWidget(self.results_panel)
 
         sizes = SettingsManager.get_splitter_sizes('right_panel')
@@ -269,14 +270,18 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.logger.error(f"Помилка ініціалізації пошуку: {e}")
             QMessageBox.critical(self, "Помилка", f"Не вдалося завантажити magistral.csv:\n{e}")
-    def load_excel_file(self):
-        last_path = SettingsManager.get_last_file_path()
-        start_dir = os.path.dirname(last_path) if last_path and os.path.exists(last_path) else ""
 
+    def load_excel_file(self):
+        """Завантажує Excel файл"""
+        # Отримуємо останній відкритий шлях
+        last_dir = SettingsManager.get_last_directory()
+        if not last_dir:
+            last_dir = ""
+        
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Виберіть Excel файл",
-            start_dir,
+            "Відкрити Excel файл",
+            last_dir,  # ДОДАНО: Починаємо з останньої директорії
             "Excel Files (*.xlsx *.xls)"
         )
 
@@ -284,57 +289,97 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            self.status_bar.setText("⏳ Завантаження файлу...")
-            df = self.excel_handler.load_file(file_path)
-
+            self.logger.info(f"Завантаження файлу: {file_path}")
+            
+            # ДОДАНО: Зберігаємо директорію файлу
+            SettingsManager.set_last_directory(os.path.dirname(file_path))
+            
+            self.excel_handler.load_file(file_path)
+            
+            # Створюємо віртуальну колонку "Старий індекс" якщо її немає
+            if 'Старий індекс' not in self.excel_handler.df.columns:
+                # ВИПРАВЛЕННЯ: Перевірка чи column_mapping не None
+                index_col = None
+                if self.excel_handler.column_mapping:
+                    index_col = self.excel_handler.column_mapping.get('index')
+                
+                if index_col and index_col in self.excel_handler.df.columns:
+                    index_position = self.excel_handler.df.columns.get_loc(index_col)
+                    self.excel_handler.df.insert(index_position + 1, 'Старий індекс', '')
+                else:
+                    # Додаємо в кінець якщо немає mapping
+                    self.excel_handler.df['Старий індекс'] = ''
+                
+                self.logger.info("Створено віртуальну колонку 'Старий індекс'")
+            
             self.current_file = file_path
             self.file_label.setText(os.path.basename(file_path))
-
-            SettingsManager.set_last_file_path(file_path)
-
-            # ДОДАЄМО ВІРТУАЛЬНУ КОЛОНКУ "Старий індекс"
-            self.add_virtual_old_index_column()
-
-            self.display_table(self.excel_handler.df)
-
+            
+            # Активуємо кнопки
             self.column_mapping_btn.setEnabled(True)
             self.save_btn.setEnabled(True)
+            self.save_as_btn.setEnabled(True)
+            self.search_btn.setEnabled(True)
             self.auto_process_btn.setEnabled(True)
             self.semi_auto_btn.setEnabled(True)
-
-            self.status_bar.setText(f"✅ Завантажено {len(df)} рядків")
-
+            
+            self.load_data_to_table()
+            
+            if self.excel_handler.column_mapping:
+                self.logger.info("Застосовано збережену схему відповідностей")
+            else:
+                reply = QMessageBox.question(
+                    self,
+                    "Налаштування стовпців",
+                    "Бажаєте налаштувати відповідність стовпців зараз?",
+                    QMessageBox.Yes | QMessageBox.No
+                )
+                
+                if reply == QMessageBox.Yes:
+                    self.configure_columns()
+            
+            self.status_bar.setText(f"✅ Завантажено: {os.path.basename(file_path)} ({len(self.excel_handler.df)} рядків)")
+            self.logger.info(f"Файл завантажено успішно: {len(self.excel_handler.df)} рядків")
+            
         except Exception as e:
             self.logger.error(f"Помилка завантаження файлу: {e}")
-            QMessageBox.critical(self, "Помилка", f"Не вдалося завантажити:\n{e}")
+            import traceback
+            traceback.print_exc()  # Виведе повний traceback
+            QMessageBox.critical(
+                self,
+                "Помилка",
+                f"Не вдалося завантажити файл:\n{e}"
+            )
 
-    def add_virtual_old_index_column(self):
-        """Додає віртуальну колонку 'Старий індекс' в кінець DataFrame"""
-        if 'Старий індекс' not in self.excel_handler.df.columns:
-            self.excel_handler.df['Старий індекс'] = ''
-            self.logger.info("✅ Додано віртуальну колонку 'Старий індекс'")
 
     def save_excel_file(self):
+        """Зберігає Excel файл"""
         if not self.current_file:
             self.save_excel_file_as()
             return
 
         try:
-            # Зберігаємо БЕЗ віртуальної колонки "Старий індекс"
             df_to_save = self.excel_handler.df.copy()
             
-            if 'Старий індекс' in df_to_save.columns:
-                df_to_save = df_to_save.drop(columns=['Старий індекс'])
-                self.logger.info("Видалено віртуальну колонку 'Старий індекс' перед збереженням")
+            # ПЕРЕВІРКА ЧЕКБОКСУ
+            if not self.save_old_index_checkbox.isChecked():
+                if 'Старий індекс' in df_to_save.columns:
+                    df_to_save = df_to_save.drop(columns=['Старий індекс'])
+                    self.logger.info("Колонка 'Старий індекс' не збережена")
+            else:
+                self.logger.info("Колонка 'Старий індекс' збережена у файл")
             
             df_to_save.to_excel(self.current_file, index=False)
+            
             self.status_bar.setText("✅ Файл збережено")
             QMessageBox.information(self, "Успіх", "Файл успішно збережено!")
+            
         except Exception as e:
             self.logger.error(f"Помилка збереження: {e}")
             QMessageBox.critical(self, "Помилка", f"Не вдалося зберегти:\n{e}")
 
     def save_excel_file_as(self):
+        """Зберігає Excel файл під новим ім'ям"""
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "Зберегти як",
@@ -346,15 +391,26 @@ class MainWindow(QMainWindow):
             try:
                 df_to_save = self.excel_handler.df.copy()
                 
-                if 'Старий індекс' in df_to_save.columns:
-                    df_to_save = df_to_save.drop(columns=['Старий індекс'])
+                if not self.save_old_index_checkbox.isChecked():
+                    if 'Старий індекс' in df_to_save.columns:
+                        df_to_save = df_to_save.drop(columns=['Старий індекс'])
+                        self.logger.info("Колонка 'Старий індекс' не збережена")
                 
                 df_to_save.to_excel(file_path, index=False)
+                
                 self.current_file = file_path
                 self.file_label.setText(os.path.basename(file_path))
+                
                 self.status_bar.setText("✅ Файл збережено")
+                QMessageBox.information(self, "Успіх", "Файл успішно збережено!")
+                
             except Exception as e:
+                self.logger.error(f"Помилка збереження: {e}")
                 QMessageBox.critical(self, "Помилка", f"Не вдалося зберегти:\n{e}")
+
+    def load_data_to_table(self):
+        """Завантажує дані в таблицю"""
+        self.display_table(self.excel_handler.df)
 
     def display_table(self, df):
         self.table.blockSignals(True)
@@ -397,13 +453,11 @@ class MainWindow(QMainWindow):
     def get_our_field_name_for_column(self, col_idx):
         """Повертає назву поля для відображення в заголовку колонки"""
         
-        # Перевіряємо чи це остання колонка і чи це "Старий індекс"
         if self.excel_handler.df is not None:
             if col_idx == len(self.excel_handler.df.columns) - 1:
                 if self.excel_handler.df.columns[col_idx] == 'Старий індекс':
                     return 'Ст.Інд.(поч.)'
         
-        # Словник назв полів
         field_names = {
             'client_id': 'ID',
             'name': 'ПІБ',
@@ -419,7 +473,6 @@ class MainWindow(QMainWindow):
         if not mapping:
             return None
 
-        # Шукаємо поле за індексом колонки
         for field_id, col_indices in mapping.items():
             if col_idx in col_indices:
                 return field_names.get(field_id, field_id)
@@ -436,7 +489,6 @@ class MainWindow(QMainWindow):
         self.current_row = selected_rows[0].row()
         self.search_btn.setEnabled(True)
         
-        # ОЧИЩАЄМО ПОПЕРЕДНІ РЕЗУЛЬТАТИ
         self.results_panel.clear_results()
 
         try:
@@ -588,7 +640,6 @@ class MainWindow(QMainWindow):
 
             self.status_bar.setText(f"✅ Застосовано індекс {index}")
             
-            # ЯКЩО НАПІВАВТОМАТИЧНИЙ РЕЖИМ - ПРОДОВЖУЄМО
             if self.semi_auto_waiting:
                 self.semi_auto_waiting = False
                 QApplication.processEvents()
@@ -597,52 +648,6 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.logger.error(f"Помилка застосування індексу: {e}")
             QMessageBox.critical(self, "Помилка", f"Не вдалося застосувати:\n{e}")
-
-    def apply_selected_index(self, result):
-        if self.current_row < 0:
-            return
-
-        index = result.get('index', '')
-        self.apply_suggested_index(index)
-
-    def fix_address(self, result):
-        if self.current_row < 0:
-            return
-
-        try:
-            address = self.excel_handler.get_address_from_row(self.current_row)
-            updates = {}
-
-            for field in ['region', 'district', 'city', 'street']:
-                if result.get(field):
-                    updates[field] = result[field]
-
-            if result.get('index'):
-                updates['index'] = result['index']
-
-            self.excel_handler.update_row(self.current_row, updates)
-
-            self.log_index_applied(self.current_row, address, result.get('index', ''))
-
-            mapping = self.excel_handler.column_mapping
-            if mapping:
-                for field, value in updates.items():
-                    if field in mapping:
-                        for col_idx in mapping[field]:
-                            item = self.table.item(self.current_row, col_idx)
-                            if item:
-                                item.setText(value)
-
-            for col in range(self.table.columnCount()):
-                item = self.table.item(self.current_row, col)
-                if item:
-                    item.setBackground(QColor(config.COLOR_PROCESSED))
-
-            self.status_bar.setText(f"✅ Адресу виправлено")
-
-        except Exception as e:
-            self.logger.error(f"Помилка виправлення: {e}")
-            QMessageBox.critical(self, "Помилка", f"Не вдалося виправити:\n{e}")
 
     def apply_filter(self, filter_text):
         if self.excel_handler.df is None:
@@ -664,6 +669,7 @@ class MainWindow(QMainWindow):
             bg_color = item.background().color()
             return bg_color == QColor(config.COLOR_PROCESSED)
         return False
+
     def configure_columns(self):
         if self.excel_handler.df is None:
             return
@@ -682,7 +688,6 @@ class MainWindow(QMainWindow):
             mapping = dialog.get_mapping()
             self.excel_handler.set_column_mapping(mapping)
             
-            # ДІАГНОСТИКА - виводимо в лог що саме налаштовано
             self.logger.info("=== MAPPING ПІСЛЯ НАЛАШТУВАННЯ ===")
             for field_id, col_indices in mapping.items():
                 if col_indices:
@@ -691,10 +696,7 @@ class MainWindow(QMainWindow):
                 else:
                     self.logger.info(f"  {field_id}: не налаштовано")
             
-            # Оновлюємо відображення таблиці
             self.display_table(self.excel_handler.df)
-            
-            # КОПІЮЄМО ІНДЕКС → СТАРИЙ ІНДЕКС
             self.initialize_old_index()
 
             QMessageBox.information(self, "Успіх", "Відповідність стовпців оновлено!")
@@ -713,48 +715,24 @@ class MainWindow(QMainWindow):
         
         idx_col = index_cols[0]
         
-        # Знаходимо колонку "Старий індекс" (вона завжди остання)
         old_index_col_idx = len(self.excel_handler.df.columns) - 1
         old_index_col_name = self.excel_handler.df.columns[old_index_col_idx]
         
         if old_index_col_name == 'Старий індекс':
-            # Копіюємо значення з робочого індексу
             self.excel_handler.df['Старий індекс'] = self.excel_handler.df.iloc[:, idx_col].copy()
             self.logger.info(f"✅ Скопійовано з колонки {idx_col} у 'Старий індекс'")
             
-            # Оновлюємо відображення
             for row in range(min(self.table.rowCount(), len(self.excel_handler.df))):
                 value = self.excel_handler.df.iloc[row, old_index_col_idx]
                 item = self.table.item(row, old_index_col_idx)
                 if item:
                     item.setText(str(value) if pd.notna(value) else "")
-                    # Робимо колонку тільки для читання
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                     item.setBackground(QColor(240, 240, 240))
-
-    def undo(self):
-        action = self.undo_manager.undo()
-        if action:
-            self.apply_undo_action(action, reverse=True)
-            self.update_undo_redo_buttons()
-
-    def redo(self):
-        action = self.undo_manager.redo()
-        if action:
-            self.apply_undo_action(action, reverse=False)
-            self.update_undo_redo_buttons()
-
-    def apply_undo_action(self, action, reverse=False):
-        pass
-
-    def update_undo_redo_buttons(self):
-        self.undo_btn.setEnabled(self.undo_manager.can_undo())
-        self.redo_btn.setEnabled(self.undo_manager.can_redo())
 
     def set_index_star(self):
         if self.current_row < 0:
             return
-
         self.apply_suggested_index("*")
 
     def start_auto_processing(self):
@@ -795,11 +773,9 @@ class MainWindow(QMainWindow):
         if not hasattr(self, 'semi_auto_min_confidence'):
             return
         
-        # Запускаємо обробку з наступного рядка
         next_row = self.semi_auto_current_row + 1
         if next_row < len(self.excel_handler.df):
             self.current_row = next_row
-            # Викликаємо обробку знову
             self.process_all_rows(auto_mode=False, min_confidence=self.semi_auto_min_confidence)
 
     def process_all_rows(self, auto_mode=True, min_confidence=90):
@@ -814,7 +790,6 @@ class MainWindow(QMainWindow):
         self.column_mapping_btn.setEnabled(False)
         self.save_btn.setEnabled(False)
 
-        # ПЕРЕВІРКА ЧИ КНОПКА ВЖЕ ІСНУЄ
         if not hasattr(self, 'stop_btn') or self.stop_btn is None:
             self.stop_btn = QPushButton("⏹ ЗУПИНИТИ")
             self.stop_btn.clicked.connect(self.stop_processing)
@@ -855,7 +830,6 @@ class MainWindow(QMainWindow):
                 confidence = best_result.get('confidence', 0)
                 not_working = best_result.get('not_working', '')
 
-                # ВИЗНАЧАЄМО ІНДЕКС ЗАЛЕЖНО ВІД not_working
                 if 'Тимчасово не функціонує' in not_working and 'ВПЗ' not in not_working:
                     index = '*'
                 elif 'ВПЗ' in not_working:
@@ -865,7 +839,6 @@ class MainWindow(QMainWindow):
                     index = best_result.get('index', '')
 
                 if confidence >= min_confidence and index:
-                    # АВТОМАТИЧНО ЗАСТОСОВУЄМО
                     self.excel_handler.update_row(row_idx, {'index': index})
 
                     self.log_index_applied(row_idx, address, index)
@@ -885,7 +858,6 @@ class MainWindow(QMainWindow):
                     processed_count += 1
 
                 elif not auto_mode:
-                    # НАПІВАВТОМАТИЧНИЙ РЕЖИМ - ЗУПИНЯЄМОСЯ І ЧЕКАЄМО
                     self.current_row = row_idx
                     self.semi_auto_current_row = row_idx
                     self.table.selectRow(row_idx)
@@ -895,22 +867,19 @@ class MainWindow(QMainWindow):
                     
                     self.status_bar.setText(f"⏸ Очікування вибору індексу для рядка {row_idx + 1} (точність {confidence}%)")
                     
-                    # Зупиняємо цикл і чекаємо
                     self.semi_auto_waiting = True
                     self.progress_bar.setVisible(False)
                     
-                    # Вмикаємо кнопки
                     self.search_btn.setEnabled(True)
                     self.column_mapping_btn.setEnabled(True)
                     self.save_btn.setEnabled(True)
                     
-                    return  # Виходимо з циклу
+                    return
 
             except Exception as e:
                 self.logger.error(f"Помилка обробки рядка {row_idx}: {e}")
                 continue
 
-        # ЗАВЕРШЕННЯ ОБРОБКИ
         self.search_btn.setEnabled(True)
         self.auto_process_btn.setEnabled(True)
         self.semi_auto_btn.setEnabled(True)
@@ -932,27 +901,45 @@ class MainWindow(QMainWindow):
                 f"Обробка завершена!\n\nОброблено: {processed_count}\nПропущено: {skipped_count}"
             )
 
-
     def stop_processing(self):
         self.processing_stopped = True
         self.semi_auto_waiting = False
 
-    def show_statistics(self):
-        if not self.search_engine:
-            QMessageBox.warning(self, "Увага", "Пошуковий движок не готовий")
-            return
+    def refresh_cache(self):
+        """Оновлює кеш magistral.csv та індекс Укрпошти"""
+        reply = QMessageBox.question(
+            self, 
+            "Оновлення кешу",
+            "Оновити кеш magistral.csv та індекс Укрпошти?\n\nЦе займе ~20 секунд.",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            self.status_bar.setText("⏳ Оновлення кешу...")
+            QApplication.processEvents()
+            
+            from pathlib import Path
+            
+            # ОНОВЛЕНО: Видаляємо ОБИДВА кеші
+            cache_files = [
+                Path("cache/magistral_cache.pkl"),
+                Path("cache/ukrposhta_v2.pkl")  # ЗМІНЕНО назву
+            ]
+            
+            for cache_file in cache_files:
+                if cache_file.exists():
+                    try:
+                        os.remove(cache_file)
+                        self.logger.info(f"Видалено кеш: {cache_file}")
+                    except Exception as e:
+                        self.logger.error(f"Помилка видалення {cache_file}: {e}")
+            
+            # Перезавантажуємо
+            self.init_search_engine()
+            
+            self.status_bar.setText("✅ Кеш оновлено")
+            QMessageBox.information(self, "Готово", "Кеш успішно оновлено!")
 
-        stats = self.search_engine.get_statistics()
-
-        msg = f"""
-Статистика системи:
-
-Загальна кількість записів: {stats['total_records']:,}
-Проіндексовано міст: {stats['indexed_cities']:,}
-Проіндексовано областей: {stats['indexed_regions']}
-        """
-
-        QMessageBox.information(self, "Статистика", msg)
 
     def closeEvent(self, event):
         geometry = self.geometry()

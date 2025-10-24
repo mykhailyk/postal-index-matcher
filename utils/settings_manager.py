@@ -81,3 +81,16 @@ class SettingsManager:
         settings = SettingsManager.load_settings()
         settings[f'splitter_{splitter_name}'] = sizes
         SettingsManager.save_settings(settings)
+
+    @staticmethod
+    def get_last_directory():
+        """Повертає останню відкриту директорію"""
+        settings = SettingsManager.load_settings()
+        return settings.get('last_directory', '')
+
+    @staticmethod
+    def set_last_directory(directory):
+        """Зберігає останню відкриту директорію"""
+        settings = SettingsManager.load_settings()
+        settings['last_directory'] = directory
+        SettingsManager.save_settings(settings)
