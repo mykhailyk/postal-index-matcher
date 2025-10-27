@@ -16,7 +16,7 @@ def main():
     
     try:
         app = QApplication(sys.argv)
-        app.setStyle('Fusion')  # Сучасний стиль
+        app.setStyle('Fusion')  
         
         window = MainWindow()
         window.show()

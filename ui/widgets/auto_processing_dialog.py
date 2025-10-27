@@ -16,7 +16,7 @@ class AutoProcessingDialog(QDialog):
         
         self.current_row = current_row
         self.total_rows = total_rows
-        self.min_confidence = 90
+        self.min_confidence = 80
         
         self.init_ui()
     
@@ -48,7 +48,7 @@ class AutoProcessingDialog(QDialog):
         self.confidence_spin = QSpinBox()
         self.confidence_spin.setMinimum(50)
         self.confidence_spin.setMaximum(100)
-        self.confidence_spin.setValue(90)
+        self.confidence_spin.setValue(80)
         self.confidence_spin.setSuffix(" %")
         confidence_layout.addWidget(self.confidence_spin)
         

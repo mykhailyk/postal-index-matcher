@@ -1,230 +1,231 @@
 """
-Панель результатів пошуку
+Панель результатів пошуку - ОСТАТОЧНА ВЕРСІЯ
 """
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QListWidget, QListWidgetItem, QSpinBox
 )
 from PyQt5.QtCore import pyqtSignal, Qt
-from PyQt5.QtGui import QColor, QBrush
-import config
+from PyQt5.QtGui import QFont
 
 
 class ResultsPanel(QWidget):
-    """Панель для відображення результатів пошуку"""
+    """Панель відображення результатів пошуку"""
     
-    index_double_clicked = pyqtSignal(str)
+    index_selected = pyqtSignal(str)
     
     def __init__(self, parent=None):
         super().__init__(parent)
         self.current_results = []
+        self.font_size = 9  # Початковий розмір шрифту
+        self.buildings_per_line = 20  # Скільки будинків на рядок
         self.init_ui()
     
     def init_ui(self):
-        """Ініціалізує UI"""
-        layout = QVBoxLayout()
+        """Ініціалізація інтерфейсу"""
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(3)
         
         # Заголовок
-        header = QLabel("📋 Результати пошуку")
-        header.setStyleSheet("font-weight: bold; font-size: 13px; padding: 5px;")
+        header = QLabel("Результати пошуку")
+        header.setStyleSheet("font-weight: bold; font-size: 12px; padding: 5px;")
         layout.addWidget(header)
         
-        # Налаштування
-        controls = QHBoxLayout()
+        # Контроль кількості результатів та налаштування
+        control_layout = QHBoxLayout()
         
-        label = QLabel("Будинків на рядок:")
-        label.setStyleSheet("font-size: 10px;")
-        controls.addWidget(label)
+        control_layout.addWidget(QLabel("Показувати:"))
+        self.result_count_spin = QSpinBox()
+        self.result_count_spin.setRange(1, 50)
+        self.result_count_spin.setValue(20)
+        self.result_count_spin.setMaximumWidth(60)
+        self.result_count_spin.valueChanged.connect(self.on_result_count_changed)
+        control_layout.addWidget(self.result_count_spin)
         
-        self.buildings_per_line_spinbox = QSpinBox()
-        self.buildings_per_line_spinbox.setMinimum(5)
-        self.buildings_per_line_spinbox.setMaximum(60)
-        self.buildings_per_line_spinbox.setValue(12)
-        self.buildings_per_line_spinbox.setStyleSheet("font-size: 10px; padding: 2px;")
-        self.buildings_per_line_spinbox.valueChanged.connect(self.refresh_results)
-        controls.addWidget(self.buildings_per_line_spinbox)
+        control_layout.addWidget(QLabel(" | Шрифт:"))
+        self.font_size_spin = QSpinBox()
+        self.font_size_spin.setRange(8, 16)
+        self.font_size_spin.setValue(9)
+        self.font_size_spin.setMaximumWidth(50)
+        self.font_size_spin.valueChanged.connect(self.on_font_size_changed)
+        control_layout.addWidget(self.font_size_spin)
         
-        # ДОДАНО: Контроль розміру шрифту
-        font_label = QLabel("Шрифт:")
-        font_label.setStyleSheet("font-size: 10px; margin-left: 10px;")
-        controls.addWidget(font_label)
+        control_layout.addWidget(QLabel(" | Будинків:"))
+        self.buildings_spin = QSpinBox()
+        self.buildings_spin.setRange(5, 30)
+        self.buildings_spin.setValue(20)
+        self.buildings_spin.setMaximumWidth(50)
+        self.buildings_spin.valueChanged.connect(self.on_buildings_count_changed)
+        control_layout.addWidget(self.buildings_spin)
         
-        self.results_font_spinbox = QSpinBox()
-        self.results_font_spinbox.setMinimum(9)
-        self.results_font_spinbox.setMaximum(14)
-        self.results_font_spinbox.setValue(11)
-        self.results_font_spinbox.setSuffix(" px")
-        self.results_font_spinbox.setStyleSheet("font-size: 10px; padding: 2px;")
-        self.results_font_spinbox.valueChanged.connect(self.update_font_size)
-        controls.addWidget(self.results_font_spinbox)
-        
-        controls.addStretch()
-        layout.addLayout(controls)
+        control_layout.addStretch()
+        layout.addLayout(control_layout)
         
         # Список результатів
         self.results_list = QListWidget()
+        self.results_list.setAlternatingRowColors(True)
         self.results_list.setWordWrap(True)
-        self.results_list.itemDoubleClicked.connect(self.on_result_double_clicked)
         
-        # Зберігаємо базовий stylesheet
-        self.base_stylesheet = """
+        # ⬇️ СТИЛЬ БЕЗ РАМКИ - ТІЛЬКИ ЖИРНИЙ ШРИФТ
+        self.results_list.setStyleSheet("""
             QListWidget {
-                border: 1px solid #ddd;
+                border: 1px solid #c0c0c0;
                 background-color: white;
             }
             QListWidget::item {
                 padding: 8px;
-                border-bottom: 1px solid #eee;
+                border-bottom: 1px solid #e0e0e0;
             }
-            QListWidget::item:selected {
-                border: 2px solid #2196F3;
-                background-color: rgba(33, 150, 243, 0.2);
+            QListWidget::item:alternate {
+                background-color: #f9f9f9;
             }
             QListWidget::item:hover {
-                border: 1px solid #2196F3;
+                background-color: #f0f0f0;
             }
-        """
-        self.update_font_size(11)  # Встановлюємо початковий розмір
+            QListWidget::item:selected {
+                background-color: transparent;
+                color: #000000;
+            }
+            QListWidget::item:selected:hover {
+                background-color: #f5f5f5;
+            }
+        """)
+        
+        self.results_list.itemDoubleClicked.connect(self.on_result_double_clicked)
+        self.results_list.itemSelectionChanged.connect(self.on_selection_changed)
         layout.addWidget(self.results_list)
-        
-        # Підказка
-        hint = QLabel("💡 Подвійний клік для швидкого застосування")
-        hint.setStyleSheet("color: #666; font-size: 9px; padding: 5px;")
-        layout.addWidget(hint)
-        
-        self.setLayout(layout)
-
-    def update_font_size(self, size):
-        """Оновлює розмір шрифту результатів"""
-        stylesheet = self.base_stylesheet.replace(
-            "QListWidget {",
-            f"QListWidget {{\n            font-size: {size}px;"
-        )
-        self.results_list.setStyleSheet(stylesheet)
-
     
-    def show_results(self, results, query_building=""):
-        """
-        Показує результати пошуку
+    def on_selection_changed(self):
+        """Обробка зміни вибору - робимо жирним"""
+        selected_items = self.results_list.selectedItems()
         
-        Args:
-            results: Список результатів з полями region, city, street, index тощо
-            query_building: Номер будинку з запиту для підсвічування
-        """
+        # Прибираємо жирний з усіх
+        for i in range(self.results_list.count()):
+            item = self.results_list.item(i)
+            font = QFont()
+            font.setPointSize(self.font_size)
+            font.setBold(False)
+            item.setFont(font)
+        
+        # Робимо жирним вибраний
+        if selected_items:
+            font = QFont()
+            font.setPointSize(self.font_size)
+            font.setBold(True)
+            selected_items[0].setFont(font)
+    
+    def on_result_count_changed(self, value):
+        """Обробка зміни кількості результатів"""
+        if self.current_results:
+            self.show_results(self.current_results, "")
+    
+    def on_font_size_changed(self, value):
+        """Зміна розміру шрифту"""
+        self.font_size = value
+        if self.current_results:
+            self.show_results(self.current_results, "")
+    
+    def on_buildings_count_changed(self, value):
+        """Зміна кількості будинків на рядок"""
+        self.buildings_per_line = value
+        if self.current_results:
+            self.show_results(self.current_results, "")
+    
+    def show_results(self, results, building_number=""):
+        """Відображає результати пошуку"""
         self.current_results = results
-        self._last_query_building = query_building
         self.results_list.clear()
         
         if not results:
             item = QListWidgetItem("❌ Нічого не знайдено")
-            item.setForeground(QBrush(QColor(150, 150, 150)))
+            item.setFlags(Qt.NoItemFlags)
             self.results_list.addItem(item)
             return
         
-        max_per_line = self.buildings_per_line_spinbox.value()
+        max_results = self.result_count_spin.value()
         
-        for i, result in enumerate(results, 1):
+        for i, result in enumerate(results[:max_results]):
             confidence = result.get('confidence', 0)
-            
-            # Форматуємо будинки з підсвічуванням
+            index = result.get('index', '')
+            city = result.get('city_ua', '')
+            street = result.get('street_ua', '')
             buildings = result.get('buildings', '')
-            if buildings and query_building:
-                buildings_display = self.format_buildings_multiline(
-                    buildings, 
-                    query_building, 
-                    max_per_line=max_per_line
-                )
+            not_working = result.get('not_working', '')
+            
+            # Індикатор точності
+            if confidence >= 90:
+                icon = "🟢"
+            elif confidence >= 70:
+                icon = "🟡"
             else:
-                buildings_display = self.format_buildings_multiline(
-                    buildings, 
-                    max_per_line=max_per_line
-                )
+                icon = "🔴"
             
-            # Формуємо текст
-            text = f"#{i} [{confidence}%] {result['city']}, {result['street']}"
+            # Розбиваємо будинки на рядки
+            buildings_list = [b.strip() for b in buildings.split(',') if b.strip()]
+            buildings_lines = []
             
-            if result.get('district'):
-                text += f"\n   Район: {result['district']}"
+            for j in range(0, len(buildings_list), self.buildings_per_line):
+                line_buildings = buildings_list[j:j + self.buildings_per_line]
+                buildings_lines.append(','.join(line_buildings))
             
-            text += f"\n   🏠 {buildings_display}"
-            text += f"\n   📮 Індекс: {result['index']}"
+            # ⬇️ ФОРМАТ: НП, вулиця, будинки (рядок 1)
+            text = f"{icon} {city}, {street}, {buildings_lines[0] if buildings_lines else ''}"
+            
+            # Додаємо інші рядки будинків
+            if len(buildings_lines) > 1:
+                for line in buildings_lines[1:]:
+                    text += f"\n{line}"
+            
+            # ⬇️ ІНДЕКС НА НОВОМУ РЯДКУ (звичайний текст)
+            text += f"\n{index} ({confidence}%)"
             
             # Додаткова інформація
-            if result.get('not_working'):
-                text += f"\n   ⚠️ {result['not_working']}"
-            elif result.get('features'):
-                text += f"\n   ℹ️ {result['features']}"
+            if not_working:
+                if 'Тимчасово не функціонує' in not_working:
+                    text += " ⚠️"
+                if 'ВПЗ' in not_working:
+                    text += " 📦"
             
-            # Створюємо item
             item = QListWidgetItem(text)
+            item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             item.setData(Qt.UserRole, result)
             
-            # КОЛЬОРОВЕ РОЗДІЛЕННЯ - ВИПРАВЛЕНО!
-            if confidence >= 90:
-                color_hex = "#C8E6C9"  # світло-зелений
-            elif confidence >= 80:
-                color_hex = "#FFF9C4"  # світло-жовтий
-            elif confidence >= 70:
-                color_hex = "#FFE0B2"  # світло-помаранчевий
-            else:
-                color_hex = "#FFCDD2"  # світло-червоний
-            
-            # Встановлюємо колір фону
-            item.setBackground(QColor(color_hex))
+            # Встановлюємо розмір шрифту
+            font = QFont()
+            font.setPointSize(self.font_size)
+            item.setFont(font)
             
             self.results_list.addItem(item)
-    
-    def format_buildings_multiline(self, buildings_str, highlight="", max_per_line=12):
-        """
-        Форматує будинки в кілька рядків з підсвічуванням
-        
-        Args:
-            buildings_str: Рядок з будинками через кому
-            highlight: Будинок для підсвічування
-            max_per_line: Максимум будинків на рядок
-        """
-        if not buildings_str:
-            return "—"
-        
-        buildings = [b.strip() for b in buildings_str.split(',')]
-        
-        # Підсвічуємо шуканий будинок
-        if highlight:
-            highlight_clean = highlight.upper().replace("-", "").replace(" ", "")
-            formatted = []
-            for b in buildings:
-                b_clean = b.upper().replace("-", "").replace(" ", "")
-                if b_clean == highlight_clean:
-                    formatted.append(f"➤{b}⬅")  # Підсвічуємо стрілками
-                else:
-                    formatted.append(b)
-            buildings = formatted
-        
-        # Розбиваємо на рядки
-        lines = []
-        for i in range(0, len(buildings), max_per_line):
-            chunk = buildings[i:i + max_per_line]
-            lines.append(", ".join(chunk))
-        
-        return "\n      ".join(lines)
-    
-    def refresh_results(self):
-        """Оновлює відображення результатів при зміні налаштувань"""
-        if self.current_results:
-            query_building = ""
-            if hasattr(self, '_last_query_building'):
-                query_building = self._last_query_building
-            self.show_results(self.current_results, query_building)
+
     
     def on_result_double_clicked(self, item):
-        """Обробляє подвійний клік по результату"""
+        """Обробка подвійного кліку на результат"""
         result = item.data(Qt.UserRole)
-        if result and 'index' in result:
-            self.index_double_clicked.emit(result['index'])
+        if result:
+            index = result.get('index', '')
+            not_working = result.get('not_working', '')
+            
+            if 'Тимчасово не функціонує' in not_working and 'ВПЗ' not in not_working:
+                index = '*'
+            elif 'ВПЗ' in not_working:
+                import re
+                match = re.search(r'(\d{5})', not_working)
+                if match:
+                    index = match.group(1)
+                else:
+                    index = '*'
+            
+            if index:
+                self.index_selected.emit(index)
     
-    def clear_results(self):
+    def get_selected_result(self):
+        """Повертає вибраний результат"""
+        current_item = self.results_list.currentItem()
+        if current_item:
+            return current_item.data(Qt.UserRole)
+        return None
+    
+    def clear(self):
         """Очищає результати"""
         self.results_list.clear()
         self.current_results = []

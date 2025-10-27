@@ -43,7 +43,8 @@ class ColumnMappingDialog(QDialog):
     def init_ui(self):
         """Ініціалізує UI"""
         self.setWindowTitle("Налаштування відповідності стовпців")
-        self.setMinimumSize(900, 700)
+        self.setMinimumSize(1100, 450)  # ⬅️ ЗМІНЕНО: ширше і нижче
+        self.resize(1200, 550)  # ⬅️ ДОДАНО: початковий розмір
         
         layout = QVBoxLayout()
         

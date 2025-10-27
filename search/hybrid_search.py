@@ -176,7 +176,10 @@ class HybridSearch:
             'region': record.region,
             'district': record.new_district or record.old_district,
             'city': record.city,
+            'city_ua': record.city,  # ⬅️ ДОДАНО
             'street': record.street,
+            'street_ua': record.street,  # ⬅️ ДОДАНО
+            'building': record.buildings,  # ⬅️ ДОДАНО (для відображення)
             'buildings': record.buildings,
             'index': record.city_index,
             'score': score,

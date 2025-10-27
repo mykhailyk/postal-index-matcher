@@ -1,19 +1,34 @@
 """
-Конфігурація проекту Address Matcher v2
+Конфігурація проекту Address Matcher v2.1
 """
 import os
+import sys
 
-# Шляхи
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
-CACHE_DIR = os.path.join(PROJECT_ROOT, 'cache')
-LOGS_DIR = os.path.join(PROJECT_ROOT, 'logs')
-COLUMN_MAPPINGS_DIR = os.path.join(PROJECT_ROOT, 'column_mappings')
+
+def get_base_path():
+    """Отримати базовий шлях (для EXE і Python)"""
+    if getattr(sys, 'frozen', False):
+        # Якщо EXE - повертаємо папку де лежить EXE
+        return os.path.dirname(sys.executable)
+    else:
+        # Якщо Python скрипт
+        return os.path.dirname(os.path.abspath(__file__))
+
+
+# Базовий шлях
+BASE_PATH = get_base_path()
+
+# Шляхи (динамічні для EXE)
+PROJECT_ROOT = BASE_PATH
+DATA_DIR = os.path.join(BASE_PATH, 'data')
+CACHE_DIR = os.path.join(BASE_PATH, 'cache')
+LOGS_DIR = os.path.join(BASE_PATH, 'logs')
+COLUMN_MAPPINGS_DIR = os.path.join(BASE_PATH, 'column_mappings')
 
 # Шлях до файлу налаштувань
-SETTINGS_FILE = os.path.join(PROJECT_ROOT, 'settings.json')
+SETTINGS_FILE = os.path.join(BASE_PATH, 'settings.json')
 
-# Magistral
+# Magistral - ФІКСОВАНИЙ ШЛЯХ (мережевий диск)
 MAGISTRAL_CSV_PATH = r'X:\!obmin\UkrPoshta\magistral.csv'
 MAGISTRAL_CACHE_PATH = os.path.join(CACHE_DIR, 'normalized_magistral.pkl')
 
@@ -31,7 +46,7 @@ SEARCH_WEIGHTS = {
 
 # Пороги схожості
 SIMILARITY_THRESHOLD = 0.60  # Мінімальна схожість для результату
-HIGH_CONFIDENCE_THRESHOLD = 0.95  # Висока впевненість
+HIGH_CONFIDENCE_THRESHOLD = 0.80  # Висока впевненість
 
 # Кількість результатів
 MAX_SEARCH_RESULTS = 20
@@ -43,7 +58,7 @@ SEARCH_CACHE_PATH = os.path.join(CACHE_DIR, 'search_cache.json')
 CACHE_EXPIRY_DAYS = 30
 
 # UI
-WINDOW_TITLE = "Підбір поштових індексів v2.0"
+WINDOW_TITLE = "PrintTo Address Matcher v2.1"
 WINDOW_WIDTH = 1600
 WINDOW_HEIGHT = 900
 
@@ -70,4 +85,4 @@ CITY_PREFIXES = ['м.', 'місто', 'с.', 'село', 'смт.', 'с-ще', '
 MAX_WORKERS = 4  # Кількість потоків для batch обробки
 
 # Undo/Redo
-MAX_UNDO_STACK = 100  # Максимум кроків назад
+MAX_UNDO_STACK = 50  # Максимум кроків назад

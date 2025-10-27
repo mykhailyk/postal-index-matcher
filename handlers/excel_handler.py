@@ -1,6 +1,7 @@
 """
 Обробник Excel файлів
 """
+import os
 import pandas as pd
 from models.address import Address
 from utils.logger import Logger
@@ -27,7 +28,7 @@ class ExcelHandler:
             raise
     
     def save_file(self, file_path: str = None):
-        """Зберігає DataFrame у Excel файл"""
+        """Зберігає DataFrame у Excel файл (підтримує XLS і XLSX)"""
         if self.df is None:
             raise ValueError("Немає даних для збереження")
         
@@ -36,8 +37,18 @@ class ExcelHandler:
             raise ValueError("Не вказано шлях для збереження")
         
         try:
-            self.df.to_excel(save_path, index=False)
-            self.logger.info(f"Файл збережено: {save_path}")
+            # ⬇️ ДОДАНО: Визначаємо розширення файлу
+            _, ext = os.path.splitext(save_path)
+            
+            if ext.lower() == '.xls':
+                # Зберігаємо в XLS (старий формат)
+                self.df.to_excel(save_path, index=False, engine='xlwt')
+                self.logger.info(f"Файл збережено як XLS: {save_path}")
+            else:
+                # Зберігаємо в XLSX (новий формат)
+                self.df.to_excel(save_path, index=False, engine='openpyxl')
+                self.logger.info(f"Файл збережено як XLSX: {save_path}")
+                
         except Exception as e:
             self.logger.error(f"Помилка збереження файлу {save_path}: {e}")
             raise
@@ -59,6 +70,7 @@ class ExcelHandler:
             raise ValueError("Файл не завантажено або mapping не налаштовано")
         
         def get_value(field_id):
+            """Витягує значення з УСІХ колонок цього поля"""
             if field_id not in self.column_mapping:
                 return ""
             
@@ -66,10 +78,14 @@ class ExcelHandler:
             if not col_indices:
                 return ""
             
-            # Беремо перший стовпець
-            col_idx = col_indices[0]
-            value = self.df.iloc[row_index, col_idx]
-            return str(value) if pd.notna(value) else ""
+            # ⬇️ ВИПРАВЛЕНО: Об'єднуємо значення з УСІХ колонок
+            values = []
+            for col_idx in col_indices:
+                value = self.df.iloc[row_index, col_idx]
+                if pd.notna(value) and str(value).strip():
+                    values.append(str(value).strip())
+            
+            return " ".join(values)  # Об'єднуємо через пробіл
         
         return Address(
             city=get_value('city'),
@@ -82,6 +98,7 @@ class ExcelHandler:
             client_id=get_value('client_id'),
             name=get_value('name')
         )
+
     
     def update_row(self, row_index: int, updates: dict):
         """Оновлює значення в рядку

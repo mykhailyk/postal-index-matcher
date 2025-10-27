@@ -118,6 +118,10 @@ class AddressSelectorPanel(QWidget):
         
         self.buildings_combo = QComboBox()
         self.buildings_combo.currentIndexChanged.connect(self.on_building_selected)
+        self.buildings_combo.setMaxVisibleItems(10)
+        self.buildings_combo.view().setWordWrap(True)
+        self.buildings_combo.view().setTextElideMode(Qt.ElideNone)
+        self.buildings_combo.view().setMinimumWidth(250)
         self.buildings_label = QLabel("Будинки:")
         form.addRow(self.buildings_label, self.buildings_combo)
         self.buildings_combo.hide()
@@ -244,6 +248,11 @@ class AddressSelectorPanel(QWidget):
         
         self.cascade_building_combo = QComboBox()
         self.cascade_building_combo.currentTextChanged.connect(self.on_cascade_building_changed)
+        self.cascade_building_combo.setMaxVisibleItems(10)
+        self.cascade_building_combo.view().setWordWrap(True)
+        self.cascade_building_combo.view().setTextElideMode(Qt.ElideNone)
+        # Встановити мінімальну ширину для перенесення
+        self.cascade_building_combo.view().setMinimumWidth(250)
         self.cascade_building_combo.hide()
         form.addWidget(self.cascade_building_combo)
         
@@ -417,15 +426,9 @@ class AddressSelectorPanel(QWidget):
         
         city_full = self.cascade_city_input.text()
         
-        # DEBUG
-        print(f"🏠 Шукаємо будинки: місто='{city_full}', вулиця='{street_text}'")
         
         buildings_map = self.ukr_index.get_buildings(city_full, street_text)
-        
-        print(f"📦 Знайдено індексів: {len(buildings_map)}")
-        if buildings_map:
-            print(f"   Перші 3: {list(buildings_map.items())[:3]}")
-        
+                
         if len(buildings_map) == 0:
             # Немає індексів
             self.cascade_index_input.clear()
@@ -470,6 +473,21 @@ class AddressSelectorPanel(QWidget):
         index = self.cascade_index_input.text().strip()
         if index and len(index) == 5:
             self.index_double_clicked.emit(index)
+            
+            # ⬇️ ВЖЕ Є (перевір чи працює):
+            self.cascade_city_input.clear()
+            self.cascade_street_input.clear()
+            self.cascade_street_input.setEnabled(False)
+            self.cascade_building_combo.clear()
+            self.cascade_building_combo.hide()
+            self.cascade_index_input.clear()
+            
+            # Ховаємо popup
+            if hasattr(self, 'cascade_city_list'):
+                self.cascade_city_list.hide()
+            if hasattr(self, 'cascade_street_list'):
+                self.cascade_street_list.hide()
+
     
     # ==================== РУЧНА ФОРМА ====================
     

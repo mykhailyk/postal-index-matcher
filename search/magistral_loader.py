@@ -3,6 +3,7 @@
 """
 import csv
 import pickle
+import lzma  # ⬅️ ДОДАНО
 import os
 from typing import List, Dict
 from models.magistral_record import MagistralRecord
@@ -29,13 +30,29 @@ class MagistralLoader:
         Returns:
             Список MagistralRecord
         """
-        # Тимчасово завжди перезавантажуємо для DEBUG
-        force_reload = True
+        # ⬇️ ВИДАЛЕНО: force_reload = True
         
-        # Перевіряємо кеш
-        if not force_reload and os.path.exists(config.MAGISTRAL_CACHE_PATH):
-            print("📦 Завантаження з кешу...")
-            return self._load_from_cache()
+        # Шлях до стиснутого кешу
+        cache_xz = config.MAGISTRAL_CACHE_PATH + '.xz'
+        
+        # ⬇️ ПЕРЕВІРЯЄМО КЕШ (якщо НЕ примусове завантаження)
+        if not force_reload and os.path.exists(cache_xz):
+            try:
+                print(f"📦 Завантаження з кешу: {cache_xz}")
+                return self._load_from_cache()
+            except Exception as e:
+                print(f"⚠️ Помилка завантаження кешу: {e}")
+                print("📄 Перехід до завантаження з CSV...")
+        
+        # ⬇️ ЯКЩО кешу немає АБО force_reload - завантажуємо з CSV
+        
+        # Видаляємо старий кеш якщо є
+        if os.path.exists(config.MAGISTRAL_CACHE_PATH):
+            try:
+                os.remove(config.MAGISTRAL_CACHE_PATH)
+                print("✓ Старий кеш видалено")
+            except:
+                pass
         
         # Завантажуємо з CSV
         print("📄 Завантаження magistral.csv...")
@@ -51,6 +68,7 @@ class MagistralLoader:
         
         print(f"✅ Завантажено {len(self.records)} записів")
         return self.records
+
     
     def _load_from_csv(self):
         """Завантажує дані з CSV"""
@@ -82,7 +100,6 @@ class MagistralLoader:
         
         print(f"✓ Використано кодування: {used_encoding}")
         
-        
         # Обробляємо дані
         for row in csv_data:
             record = MagistralRecord(
@@ -90,18 +107,17 @@ class MagistralLoader:
                 old_district=row.get(' Адміністративний район(старий)', '').strip(),
                 new_district=row.get(' Адміністративний район(новий)', '').strip(),
                 otg=row.get(' Найменування ОТГ(довідково)', '').strip(),
-                city=row.get(' Населений пункт', '').strip(),  # ПРОБІЛ!!!
-                city_index=row.get(' Індекс НП', '').strip(),  # ПРОБІЛ!!!
-                street=row.get(' Назва вулиці', '').strip(),  # ПРОБІЛ!!!
+                city=row.get(' Населений пункт', '').strip(),
+                city_index=row.get(' Індекс НП', '').strip(),
+                street=row.get(' Назва вулиці', '').strip(),
                 buildings=row.get('№ будинку', '').strip(),
-                sort_center_1=row.get('  сортувальний центр 1 рівня', '').strip(),  # ДВА ПРОБІЛИ!!!
+                sort_center_1=row.get('  сортувальний центр 1 рівня', '').strip(),
                 sort_center_2=row.get(' сортувальний центр 2 рівня', '').strip(),
                 delivery_district=row.get(' Адміністративний район доставки(вручення)', '').strip(),
                 tech_index=row.get(' Технологічний індекс ОПЗ доставки(вручення)', '').strip(),
                 features=row.get('Особливості функціонування ВПЗ', '').strip(),
                 not_working=row.get('Тимчасово не функціонує', '').strip()
             )
-
             
             # Нормалізуємо для пошуку
             record.normalized_city = self.normalizer.normalize_city(record.city)
@@ -114,7 +130,6 @@ class MagistralLoader:
         """Будує індекси для швидкого пошуку"""
         self.index_by_city_prefix = {}
         self.index_by_region = {}
-        
         
         for i, record in enumerate(self.records):
             # Індекс по перших 2-3 літерах міста
@@ -136,20 +151,26 @@ class MagistralLoader:
         print(f"✓ Індекс областей: {len(self.index_by_region)} областей")
     
     def _save_to_cache(self):
-        """Зберігає в pickle кеш"""
+        """Зберігає в pickle кеш з компресією"""
+        cache_xz = config.MAGISTRAL_CACHE_PATH + '.xz'
+        
         cache_data = {
             'records': self.records,
             'index_by_city_prefix': self.index_by_city_prefix,
             'index_by_region': self.index_by_region
         }
         
-        with open(config.MAGISTRAL_CACHE_PATH, 'wb') as f:
-            pickle.dump(cache_data, f)
+        # ⬇️ Зберігаємо з lzma компресією
+        with lzma.open(cache_xz, 'wb', preset=6) as f:
+            pickle.dump(cache_data, f, protocol=pickle.HIGHEST_PROTOCOL)
     
     def _load_from_cache(self) -> List[MagistralRecord]:
-        """Завантажує з pickle кешу"""
+        """Завантажує з pickle кешу з компресією"""
+        cache_xz = config.MAGISTRAL_CACHE_PATH + '.xz'
+        
         try:
-            with open(config.MAGISTRAL_CACHE_PATH, 'rb') as f:
+            # ⬇️ Завантажуємо з lzma
+            with lzma.open(cache_xz, 'rb') as f:
                 cache_data = pickle.load(f)
             
             self.records = cache_data['records']
@@ -161,7 +182,13 @@ class MagistralLoader:
         
         except Exception as e:
             print(f"⚠️ Помилка завантаження кешу: {e}")
-            return self._load_from_csv()
+            # Видаляємо пошкоджений кеш
+            try:
+                os.remove(cache_xz)
+            except:
+                pass
+            # Перезавантажуємо з CSV
+            return self.load(force_reload=True)
     
     def get_candidates_by_city_prefix(self, city: str) -> List[MagistralRecord]:
         """Швидкий пошук по префіксу міста"""

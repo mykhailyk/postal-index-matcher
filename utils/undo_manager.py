@@ -2,16 +2,21 @@
 Менеджер Undo/Redo операцій
 """
 from typing import List, Dict, Any
-import config
 
 
 class UndoManager:
     """Менеджер для відміни/повтору дій"""
     
-    def __init__(self):
+    def __init__(self, max_stack_size: int = 50):
+        """
+        Ініціалізація менеджера
+        
+        Args:
+            max_stack_size: Максимальна кількість збережених дій
+        """
         self.undo_stack: List[Dict[str, Any]] = []
         self.redo_stack: List[Dict[str, Any]] = []
-        self.max_stack_size = config.MAX_UNDO_STACK
+        self.max_stack_size = max_stack_size
     
     def push(self, action: Dict[str, Any]):
         """
@@ -19,7 +24,10 @@ class UndoManager:
         
         Args:
             action: Словник з інформацією про дію
-                   Повинен містити 'type' та інші дані
+                   Обов'язково містить:
+                   - 'row': номер рядка
+                   - 'old_values': словник старих значень
+                   - 'new_values': словник нових значень
         """
         self.undo_stack.append(action)
         
@@ -43,7 +51,7 @@ class UndoManager:
         Відміняє останню дію
         
         Returns:
-            Дія для відміни або None
+            Дія для відміни або None якщо стек пустий
         """
         if not self.can_undo():
             return None
@@ -58,7 +66,7 @@ class UndoManager:
         Повторює відмінену дію
         
         Returns:
-            Дія для повтору або None
+            Дія для повтору або None якщо стек пустий
         """
         if not self.can_redo():
             return None
@@ -80,3 +88,25 @@ class UndoManager:
     def get_redo_count(self) -> int:
         """Повертає кількість доступних redo"""
         return len(self.redo_stack)
+    
+    def peek_undo(self) -> Dict[str, Any]:
+        """
+        Переглянути останню undo дію без видалення
+        
+        Returns:
+            Остання дія або None
+        """
+        if self.can_undo():
+            return self.undo_stack[-1]
+        return None
+    
+    def peek_redo(self) -> Dict[str, Any]:
+        """
+        Переглянути останню redo дію без видалення
+        
+        Returns:
+            Остання дія або None
+        """
+        if self.can_redo():
+            return self.redo_stack[-1]
+        return None
