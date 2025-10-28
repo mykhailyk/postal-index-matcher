@@ -825,7 +825,7 @@ class MainWindow(QMainWindow):
         )
 
     def apply_filter_new(self, filter_type):
-        """Фільтр: порівнюємо Індекс vs Старий індекс"""
+        """Фільтр: зелений текст = проставлено"""
         if self.excel_handler.df is None:
             return
         
@@ -840,39 +840,29 @@ class MainWindow(QMainWindow):
             
         idx_col = index_cols[0]
         
-        # Знаходимо колонку "Старий індекс"
-        old_index_col_idx = None
-        for i, col_name in enumerate(self.excel_handler.df.columns):
-            if col_name == 'Старий індекс':
-                old_index_col_idx = i
-                break
-        
-        if old_index_col_idx is None:
-            self.logger.warning("Колонка 'Старий індекс' не знайдена")
-            return
-        
         for row in range(self.table.rowCount()):
             try:
-                # Беремо значення з DataFrame
-                current_index = str(self.excel_handler.df.iloc[row, idx_col]).strip()
-                old_index = str(self.excel_handler.df.iloc[row, old_index_col_idx]).strip()
+                # Отримуємо комірку з індексом
+                index_item = self.table.item(row, idx_col)
                 
-                # Нормалізуємо порожні значення
-                if current_index in ['', 'nan', 'None']:
-                    current_index = ''
-                if old_index in ['', 'nan', 'None']:
-                    old_index = ''
+                if index_item:
+                    # ⬇️ ПЕРЕВІРЯЄМО КОЛІР ТЕКСТУ (foreground)
+                    text_color = index_item.foreground().color()
+                    
+                    # ⬇️ Зелений текст: #4CAF50 = RGB(76, 175, 80)
+                    is_green = (
+                        text_color.red() == 76 and 
+                        text_color.green() == 175 and 
+                        text_color.blue() == 80
+                    )
+                else:
+                    is_green = False
                 
-                # ⬇️ ПРАВИЛЬНА ЛОГІКА:
-                # Проставлено = Індекс ЗМІНИВСЯ (current != old)
-                # Непроставлено = Індекс НЕ ЗМІНИВСЯ (current == old)
-                
-                is_processed = (current_index != old_index)
-                
+                # Логіка фільтру
                 if filter_type == "Проставлено":
-                    show = is_processed  # Показати тільки змінені
+                    show = is_green
                 elif filter_type == "Непроставлено":
-                    show = not is_processed  # Показати тільки незмінені
+                    show = not is_green
                 else:  # "Всі"
                     show = True
                 
@@ -883,10 +873,12 @@ class MainWindow(QMainWindow):
                 self.table.setRowHidden(row, False)
                 continue
         
-        # Логування результату
+        # Логування
         visible_count = sum(1 for row in range(self.table.rowCount()) if not self.table.isRowHidden(row))
         self.status_bar.setText(f"Фільтр '{filter_type}': показано {visible_count} з {self.table.rowCount()} рядків")
         self.logger.info(f"Фільтр '{filter_type}': {visible_count}/{self.table.rowCount()}")
+
+
 
 
 

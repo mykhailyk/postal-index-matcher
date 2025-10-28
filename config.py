@@ -69,7 +69,7 @@ COLOR_LOW_CONFIDENCE = "#FFCDD2"  # Червоний
 
 # Автозбереження
 AUTOSAVE_ENABLED = True
-AUTOSAVE_INTERVAL = 300  # секунд (5 хвилин)
+AUTOSAVE_INTERVAL = 100  # секунд (5 хвилин)
 
 # Логування
 LOG_FILE = os.path.join(LOGS_DIR, 'app.log')
@@ -82,7 +82,7 @@ STREET_PREFIXES = ['вул.', 'вулиця', 'пров.', 'провулок', '
 CITY_PREFIXES = ['м.', 'місто', 'с.', 'село', 'смт.', 'с-ще', 'селище']
 
 # Багатопоточність
-MAX_WORKERS = 4  # Кількість потоків для batch обробки
+MAX_WORKERS = 8  # Кількість потоків для batch обробки
 
 # Undo/Redo
-MAX_UNDO_STACK = 50  # Максимум кроків назад
+MAX_UNDO_STACK = 20  # Максимум кроків назад

@@ -43,8 +43,8 @@ class ColumnMappingDialog(QDialog):
     def init_ui(self):
         """Ініціалізує UI"""
         self.setWindowTitle("Налаштування відповідності стовпців")
-        self.setMinimumSize(1100, 450)  # ⬅️ ЗМІНЕНО: ширше і нижче
-        self.resize(1200, 550)  # ⬅️ ДОДАНО: початковий розмір
+        self.setMinimumSize(1100, 350)  # ⬅️ ЗМІНЕНО: ширше і нижче
+        self.resize(1200, 450)  # ⬅️ ДОДАНО: початковий розмір
         
         layout = QVBoxLayout()
         
@@ -115,7 +115,7 @@ class ColumnMappingDialog(QDialog):
         preview_layout = QVBoxLayout()
         
         self.preview_table = QTableWidget()
-        self.preview_table.setMaximumHeight(200)
+        self.preview_table.setMaximumHeight(100)
         self.update_preview()
         
         preview_layout.addWidget(self.preview_table)

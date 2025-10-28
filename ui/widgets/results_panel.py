@@ -150,6 +150,8 @@ class ResultsPanel(QWidget):
             city = result.get('city_ua', '')
             street = result.get('street_ua', '')
             buildings = result.get('buildings', '')
+            region = result.get('region', '')  # ⬅️ ДОДАНО
+            district = result.get('district', '')  # ⬅️ ДОДАНО
             not_working = result.get('not_working', '')
             
             # Індикатор точності
@@ -160,7 +162,15 @@ class ResultsPanel(QWidget):
             else:
                 icon = "🔴"
             
-            # Розбиваємо будинки на рядки
+            # ⬇️ РЯДОК 1: НП, район, область
+            text = f"{icon} {city}"
+            
+            if district:
+                text += f", {district} р-н"
+            if region:
+                text += f", {region} обл."
+            
+            # ⬇️ РЯДОК 2: Вулиця і будинки
             buildings_list = [b.strip() for b in buildings.split(',') if b.strip()]
             buildings_lines = []
             
@@ -168,15 +178,14 @@ class ResultsPanel(QWidget):
                 line_buildings = buildings_list[j:j + self.buildings_per_line]
                 buildings_lines.append(','.join(line_buildings))
             
-            # ⬇️ ФОРМАТ: НП, вулиця, будинки (рядок 1)
-            text = f"{icon} {city}, {street}, {buildings_lines[0] if buildings_lines else ''}"
+            text += f"\n{street}, {buildings_lines[0] if buildings_lines else ''}"
             
             # Додаємо інші рядки будинків
             if len(buildings_lines) > 1:
                 for line in buildings_lines[1:]:
                     text += f"\n{line}"
             
-            # ⬇️ ІНДЕКС НА НОВОМУ РЯДКУ (звичайний текст)
+            # ⬇️ РЯДОК 3: Індекс
             text += f"\n{index} ({confidence}%)"
             
             # Додаткова інформація
@@ -196,6 +205,7 @@ class ResultsPanel(QWidget):
             item.setFont(font)
             
             self.results_list.addItem(item)
+
 
     
     def on_result_double_clicked(self, item):
