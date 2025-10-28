@@ -3,7 +3,7 @@
 """
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-    QListWidget, QListWidgetItem, QSpinBox
+    QListWidget, QListWidgetItem, QSpinBox, QPushButton
 )
 from PyQt5.QtCore import pyqtSignal, Qt
 from PyQt5.QtGui import QFont
@@ -13,12 +13,13 @@ class ResultsPanel(QWidget):
     """Панель відображення результатів пошуку"""
     
     index_selected = pyqtSignal(str)
+    search_requested = pyqtSignal()  # ⬅️ ДОДАНО
     
     def __init__(self, parent=None):
         super().__init__(parent)
         self.current_results = []
-        self.font_size = 9  # Початковий розмір шрифту
-        self.buildings_per_line = 20  # Скільки будинків на рядок
+        self.font_size = 9
+        self.buildings_per_line = 20
         self.init_ui()
     
     def init_ui(self):
@@ -33,6 +34,12 @@ class ResultsPanel(QWidget):
         
         # Контроль кількості результатів та налаштування
         control_layout = QHBoxLayout()
+
+        # ⬇️ КНОПКА ЗНАЙТИ
+        self.search_btn = QPushButton("🔍 Знайти (Enter)")
+        self.search_btn.setStyleSheet("padding: 5px 10px; font-size: 11px;")
+        self.search_btn.clicked.connect(self.on_search_clicked)
+        control_layout.addWidget(self.search_btn)
         
         control_layout.addWidget(QLabel("Показувати:"))
         self.result_count_spin = QSpinBox()
@@ -66,7 +73,6 @@ class ResultsPanel(QWidget):
         self.results_list.setAlternatingRowColors(True)
         self.results_list.setWordWrap(True)
         
-        # ⬇️ СТИЛЬ БЕЗ РАМКИ - ТІЛЬКИ ЖИРНИЙ ШРИФТ
         self.results_list.setStyleSheet("""
             QListWidget {
                 border: 1px solid #c0c0c0;
@@ -131,6 +137,10 @@ class ResultsPanel(QWidget):
         if self.current_results:
             self.show_results(self.current_results, "")
     
+    def on_search_clicked(self):
+        """Обробка кліку на Знайти"""
+        self.search_requested.emit()
+    
     def show_results(self, results, building_number=""):
         """Відображає результати пошуку"""
         self.current_results = results
@@ -150,8 +160,8 @@ class ResultsPanel(QWidget):
             city = result.get('city_ua', '')
             street = result.get('street_ua', '')
             buildings = result.get('buildings', '')
-            region = result.get('region', '')  # ⬅️ ДОДАНО
-            district = result.get('district', '')  # ⬅️ ДОДАНО
+            region = result.get('region', '')
+            district = result.get('district', '')
             not_working = result.get('not_working', '')
             
             # Індикатор точності
@@ -162,7 +172,7 @@ class ResultsPanel(QWidget):
             else:
                 icon = "🔴"
             
-            # ⬇️ РЯДОК 1: НП, район, область
+            # РЯДОК 1: НП, район, область
             text = f"{icon} {city}"
             
             if district:
@@ -170,7 +180,7 @@ class ResultsPanel(QWidget):
             if region:
                 text += f", {region} обл."
             
-            # ⬇️ РЯДОК 2: Вулиця і будинки
+            # РЯДОК 2: Вулиця і будинки
             buildings_list = [b.strip() for b in buildings.split(',') if b.strip()]
             buildings_lines = []
             
@@ -185,7 +195,7 @@ class ResultsPanel(QWidget):
                 for line in buildings_lines[1:]:
                     text += f"\n{line}"
             
-            # ⬇️ РЯДОК 3: Індекс
+            # РЯДОК 3: Індекс
             text += f"\n{index} ({confidence}%)"
             
             # Додаткова інформація
@@ -205,8 +215,6 @@ class ResultsPanel(QWidget):
             item.setFont(font)
             
             self.results_list.addItem(item)
-
-
     
     def on_result_double_clicked(self, item):
         """Обробка подвійного кліку на результат"""

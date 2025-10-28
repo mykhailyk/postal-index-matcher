@@ -295,22 +295,24 @@ class MainWindow(QMainWindow):
         """Компактна права панель"""
         panel = QSplitter(Qt.Vertical)
         
-        # ⬇️ СПОЧАТКУ СТВОРЮЄМО results_panel
-        self.results_panel = ResultsPanel()
-        
-        # ⬇️ ПОТІМ address_panel
+        # Панель підбору адреси
         self.address_panel = AddressSelectorPanel()
         
-        # ⬇️ ТЕПЕР ПІДКЛЮЧАЄМО СИГНАЛИ (після створення)
+        # Панель результатів пошуку
+        self.results_panel = ResultsPanel()
+        
+        # ⬇️ ПІДКЛЮЧЕННЯ СИГНАЛІВ
         self.results_panel.index_selected.connect(self.apply_suggested_index)
+        self.results_panel.search_requested.connect(self.search_address)  # ⬅️ ДОДАНО!
+        
         self.address_panel.index_double_clicked.connect(self.apply_suggested_index)
         
-        # ⬇️ ДОДАЄМО ДО SPLITTER (address зверху, results знизу)
+        # Додаємо панелі
         self.address_panel.setMaximumHeight(320)
         panel.addWidget(self.address_panel)
         panel.addWidget(self.results_panel)
         
-        # ⬇️ РОЗМІРИ SPLITTER
+        # Встановлюємо розміри
         sizes = SettingsManager.get_splitter_sizes('right_panel')
         if sizes:
             panel.setSizes(sizes)
@@ -318,6 +320,7 @@ class MainWindow(QMainWindow):
             panel.setSizes([220, 480])
         
         return panel
+
 
 
     def create_status_bar(self):
@@ -605,48 +608,69 @@ class MainWindow(QMainWindow):
         return None
 
     def on_row_selected(self):
+        """Обробка зміни вибраного рядка"""
         selected_rows = self.table.selectionModel().selectedRows()
-
+        
         if not selected_rows:
             self.search_btn.setEnabled(False)
             return
-
+        
         self.current_row = selected_rows[0].row()
         self.search_btn.setEnabled(True)
-        
         self.results_panel.clear()
-
+        
+        # Відображення оригінальних даних
         try:
             address = self.excel_handler.get_address_from_row(self.current_row)
-
             parts = []
+            
             if address.region:
-                parts.append(f"Обл: {address.region}")
+                parts.append(f"Область: {address.region}")
+            
             if address.district:
-                parts.append(f"Р-н: {address.district}")
+                parts.append(f"Район: {address.district}")
+            
             if address.city:
                 parts.append(f"Місто: {address.city}")
+            
             if address.street:
-                parts.append(f"Вул: {address.street}")
+                parts.append(f"Вулиця: {address.street}")
+            
             if address.building:
-                parts.append(f"Буд: {address.building}")
-
+                parts.append(f"Будинок: {address.building}")
+            
             text = " | ".join(parts) if parts else "Немає даних"
-            self.original_data_label.setText(f"📍 {text}")
-
+            self.original_data_label.setText(f"📋 Оригінальні дані: {text}")
+            
         except Exception as e:
-            self.logger.error(f"Помилка отримання даних: {e}")
+            self.logger.error(f"Помилка відображення даних: {e}")
+        
+        # ⬇️ ДОДАНО: Автоматичний пошук
+        self.search_address()
+
 
     def on_cell_edited(self, item):
+        """Обробка редагування комірки"""
         if not item:
             return
-
+        
         row = item.row()
         col = item.column()
         new_value = item.text()
-
+        
+        # Оновлюємо DataFrame
         self.excel_handler.df.iloc[row, col] = str(new_value)
-        self.logger.debug(f"Відредаговано комірку [{row}, {col}]: {new_value}")
+        
+        self.logger.debug(f"Комірка змінена: row={row}, col={col}, value={new_value}")
+        
+        # ⬇️ ДОДАНО: Зелений колір для індексу при ручній зміні
+        mapping = self.excel_handler.column_mapping
+        if mapping and 'index' in mapping:
+            index_col = mapping['index'][0]
+            if col == index_col and new_value.strip():
+                # Встановлюємо зелений колір
+                item.setForeground(QColor("#4CAF50"))
+
 
     def search_address(self):
         if self.current_row < 0:
@@ -741,48 +765,46 @@ class MainWindow(QMainWindow):
         with open(search_log_path, 'a', encoding='utf-8') as f:
             f.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
 
-    def apply_suggested_index(self, index: str):
-        """Застосовує індекс з усіма покращеннями"""
+    def apply_suggested_index(self, index_str):
+        """Застосування індексу до поточного рядка"""
         if self.current_row < 0:
             return
-
+        
         try:
             address = self.excel_handler.get_address_from_row(self.current_row)
-            
-            # ⬇️ Збереження стану для Undo
             old_index = address.index
+            
+            # Зберігаємо для Undo
             self.undo_manager.push({
                 'row': self.current_row,
                 'old_values': {'index': old_index},
-                'new_values': {'index': index}
+                'new_values': {'index': index_str}
             })
             
-            # Оновлення даних
-            self.excel_handler.update_row(self.current_row, {'index': index})
-
-            # ⬇️ ДОДАНО: Позначити що індекс проставлений НАМИ
-            if '_processed_by_us' in self.excel_handler.df.columns:
-                self.excel_handler.df.at[self.current_row, '_processed_by_us'] = True
-
-            # Логування
-            self.log_index_applied(self.current_row, address, index)
-
-            # Оновлення таблиці (БЕЗ заливки кольором)
+            # ⬇️ ВИПРАВЛЕНО: Оновлюємо БЕЗПОСЕРЕДНЬО в DataFrame
             mapping = self.excel_handler.column_mapping
+            if mapping and 'index' in mapping:
+                idx_col = mapping['index'][0]
+                self.excel_handler.df.iloc[self.current_row, idx_col] = index_str
+            
+            # Логування
+            self.log_index_applied(self.current_row, address, index_str)
+            
+            # Оновлюємо комірку в таблиці
             if mapping and 'index' in mapping:
                 for col_idx in mapping['index']:
                     item = self.table.item(self.current_row, col_idx)
                     if item:
-                        item.setText(index)
-                        # ⬇️ ЗАМІСТЬ заливки - зелений жирний текст
+                        item.setText(index_str)
+                        # ВСТАНОВЛЮЄМО ЗЕЛЕНИЙ КОЛІР
                         item.setForeground(QColor("#4CAF50"))
                         font = item.font()
                         font.setBold(True)
                         item.setFont(font)
-
-            self.status_bar.setText(f"✅ Застосовано індекс {index}")
             
-            # ⬇️ Очистка форми "Пошук індексу"
+            self.status_bar.setText(f"✅ Застосовано індекс {index_str}")
+            
+            # ⬇️ ОЧИЩАЄМО ФОРМУ ТІЛЬКИ ПІСЛЯ УСПІХУ
             self.address_panel.cascade_city_input.clear()
             self.address_panel.cascade_street_input.clear()
             self.address_panel.cascade_street_input.setEnabled(False)
@@ -790,31 +812,32 @@ class MainWindow(QMainWindow):
             self.address_panel.cascade_building_combo.hide()
             self.address_panel.cascade_index_input.clear()
             
-            # Ховаємо popup
+            # Приховуємо popup списки
             if hasattr(self.address_panel, 'cascade_city_list'):
                 self.address_panel.cascade_city_list.hide()
             if hasattr(self.address_panel, 'cascade_street_list'):
                 self.address_panel.cascade_street_list.hide()
             
-            # ⬇️ Оновлення кнопок Undo/Redo
             self.update_undo_redo_buttons()
             
-            # ⬇️ Перехід на наступний рядок
+            # Переходимо на наступний рядок
             next_row = self.current_row + 1
             if next_row < self.table.rowCount():
                 self.table.selectRow(next_row)
                 self.scroll_to_row(next_row)
                 self.current_row = next_row
             
-            # Обробка напівавтоматичного режиму
+            # Для напівавтоматичного режиму
             if self.semi_auto_waiting:
                 self.semi_auto_waiting = False
                 QApplication.processEvents()
                 self.continue_semi_auto_processing()
-
+                
         except Exception as e:
             self.logger.error(f"Помилка застосування індексу: {e}")
-            QMessageBox.critical(self, "Помилка", f"Не вдалося застосувати:\n{e}")
+            QMessageBox.critical(self, "Помилка", f"Не вдалося застосувати індекс:\n{e}")
+
+
 
 
     def scroll_to_row(self, row):
