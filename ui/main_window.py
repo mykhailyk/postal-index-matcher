@@ -60,11 +60,23 @@ class MainWindow(QMainWindow):
         self.semi_auto_min_confidence = 80
 
         self.init_ui()
-        self.setup_shortcuts() 
-        self.init_search_engine()
+        self.setup_shortcuts()
         
-        # ⬇️ НОВИЙ КОД: Підключення сигналів від менеджерів
+        # ⬇️ ОПТИМІЗАЦІЯ: Використовуємо SearchManager замість окремого завантаження
+        # Старий код: self.init_search_engine() - ВИДАЛЕНО (подвійне завантаження!)
+        # Тепер використовуємо search_manager.search_engine
+        self.search_engine = self.search_manager.search_engine
+        
+        # Встановлюємо magistral_records для address_panel (БЕЗ build індексу!)
+        magistral_records = self.search_manager.get_magistral_records()
+        if magistral_records and hasattr(self, 'address_panel'):
+            # ⬇️ КРИТИЧНО: Передаємо records БЕЗ виклику build()
+            self.address_panel.set_magistral_cache(magistral_records)
+        
+        # Підключення сигналів
         self._connect_manager_signals()
+        
+        self.logger.info("GUI ініціалізовано")
 
 
     def init_ui(self):
