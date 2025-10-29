@@ -1,71 +1,50 @@
-# Python
+# Python cache
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
 
-# Virtual Environment
+# Директори кешу
+cache/
+*.pkl.xz
+
+# Логи
+logs/
+*.log
+
+# Налаштування середовища IDE/редакторів
+.vscode/
+.idea/
+
+# Файли середовища
+.env
+env/
 venv/
 ENV/
-env/
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# Excel файли вихідні/тимчасові
+*.xlsx
+*.xls
+*.csv
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-logs/*.log
-logs/*.jsonl
-
-# Cache
-cache/
-*.cache
-.cache/
-*.pkl
-
-# Settings & Configs
+# Файли налаштувань проєкту
 settings.json
-column_mappings/*.json
-!column_mappings/.gitkeep
+*.json
 
-# Data - виключаємо робочі файли, але включаємо magistral
-data/*.xlsx
-data/*.xls
-!data/magistral.csv
-!data/.gitkeep
+# Build та дистрибутиви
+build_exe.spec
+dist/
+build/
 
-# Test files
-test_*.py
+# Схеми IDE/редакторів
+*.sublime-project
+*.sublime-workspace
 
+# Інші тимчасові файли
+*.bak
+*.tmp
 
-cache/
-*.pkl
-*.pyc
-__pycache__/
-.idea/
-.vscode/
-*.log
+# Мак ОС файли
+.DS_Store
+
+# Windows thumbnail cache files
+Thumbs.db
