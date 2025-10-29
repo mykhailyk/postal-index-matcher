@@ -1,5 +1,5 @@
 """
-Головне вікно програми - оптимізована версія з менеджерами
+Головне вікно програми - оптимізована версія
 """
 import os
 import re
@@ -26,29 +26,15 @@ from ui.widgets.address_selector_panel import AddressSelectorPanel
 from ui.widgets.results_panel import ResultsPanel
 import config
 
-# ⬇️ НОВИЙ КОД: Імпорт менеджерів
-from ui.managers import FileManager, SearchManager, ProcessingManager, UIStateManager
-from ui.styles import AppStyles
-
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        # Старий код (залишаємо для сумісності)
         self.logger = Logger()
         self.excel_handler = ExcelHandler()
         self.undo_manager = UndoManager()
         self.search_engine = None
-
-        # ⬇️ НОВИЙ КОД: Ініціалізація менеджерів
-        self.file_manager = FileManager()
-        self.search_manager = SearchManager()
-        self.processing_manager = ProcessingManager(
-            self.excel_handler,  # Використовуємо існуючий excel_handler
-            self.undo_manager
-        )
-        self.ui_state = UIStateManager()
 
         self.current_file = None
         self.current_row = -1
@@ -57,14 +43,11 @@ class MainWindow(QMainWindow):
         self.processing_stopped = False
         self.semi_auto_waiting = False
         self.semi_auto_current_row = -1
-        self.semi_auto_min_confidence = 80
+        self.semi_auto_min_confidence = 80  # ⬅️ ЗМІНЕНО з 90 на 80
 
         self.init_ui()
         self.setup_shortcuts() 
         self.init_search_engine()
-        
-        # ⬇️ НОВИЙ КОД: Підключення сигналів від менеджерів
-        self._connect_manager_signals()
 
 
     def init_ui(self):
@@ -1393,32 +1376,6 @@ class MainWindow(QMainWindow):
         self.undo_btn.setEnabled(self.undo_manager.can_undo())
         self.redo_btn.setEnabled(self.undo_manager.can_redo())
 
-
-    def _connect_manager_signals(self):
-        """
-        ⬇️ НОВИЙ КОД: Підключення сигналів від менеджерів
-        
-        UIStateManager надсилає сигнали при зміні стану,
-        які автоматично оновлюють UI
-        """
-        # Сигнал завантаження файлу
-        self.ui_state.file_loaded.connect(self._on_file_loaded_from_manager)
-        
-        # Сигнал збереження файлу
-        self.ui_state.file_saved.connect(self._on_file_saved_from_manager)
-        
-        # Логування (поки що тільки інформаційно)
-        self.logger.info("✅ Сигнали менеджерів підключено")
-    
-    def _on_file_loaded_from_manager(self, file_path: str):
-        """Обробник сигналу file_loaded від UIStateManager"""
-        self.logger.info(f"📢 Сигнал: файл завантажено через менеджер - {file_path}")
-        # У майбутньому тут можна додати додаткову логіку
-    
-    def _on_file_saved_from_manager(self):
-        """Обробник сигналу file_saved від UIStateManager"""
-        self.logger.info("📢 Сигнал: файл збережено через менеджер")
-        # У майбутньому тут можна додати додаткову логіку
 
     def closeEvent(self, event):
         geometry = self.geometry()
