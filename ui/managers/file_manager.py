@@ -169,3 +169,33 @@ class FileManager:
                 df_to_save = df_to_save.drop(columns=['Старий індекс'])
                 self.logger.info("Колонка 'Старий індекс' не збережена")
             else:
+                self.logger.info("Колонка 'Старий індекс' збережена у файл")
+            
+            # Визначаємо розширення файлу
+            _, ext = os.path.splitext(file_path)
+            
+            # Збереження
+            if ext.lower() == '.xls':
+                # XLS підтримка
+                if len(df_to_save) > 65536:
+                    self.logger.error("XLS формат підтримує максимум 65536 рядків")
+                    return False
+                
+                try:
+                    import xlwt
+                    df_to_save.to_excel(file_path, index=False, engine='xlwt')
+                except ImportError:
+                    self.logger.error("Модуль 'xlwt' не встановлено")
+                    return False
+            else:
+                # XLSX формат
+                df_to_save.to_excel(file_path, index=False, engine='openpyxl')
+            
+            self.logger.info(f"Файл збережено: {file_path}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Помилка збереження: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return False
