@@ -26,6 +26,8 @@ from ui.widgets.auto_processing_dialog import AutoProcessingDialog
 from utils.undo_manager import UndoManager
 from utils.settings_manager import SettingsManager
 from utils.logger import Logger
+from utils.address_parser import parse_full_address_text, is_full_address_in_text
+
 import config
 
 class CacheLoaderThread(QThread):
@@ -90,15 +92,8 @@ class MainWindow(QMainWindow):
         self._setup_callbacks()
         self._setup_shortcuts()
         
-        # Кеш УЖЕ завантажений в main.py перед створенням вікна
-        self._cache_loaded = False
-        
-        # Отримуємо вже завантажені дані (БЕЗ перезавантаження)
-        magistral_records = self.search_manager.get_magistral_records()
-        if magistral_records and self.address_panel:
-            self.address_panel.set_magistral_cache(magistral_records)
-            self._cache_loaded = True
-            self.logger.info(f"Address panel отримав {len(magistral_records)} записів з кешу")
+        # Кеш вже завантажений в main.py
+        self._cache_loaded = True
         
         self.logger.info("GUI ініціалізовано")
     
@@ -214,6 +209,14 @@ class MainWindow(QMainWindow):
         self.save_as_btn.setStyleSheet(AppStyles.button_default())
         self.save_as_btn.clicked.connect(self.save_file_as)
         row1.addWidget(self.save_as_btn)
+        
+        # Кнопка парсингу адрес
+        self.parse_addresses_btn = QPushButton("🔧 Розпарсити адреси")
+        self.parse_addresses_btn.setEnabled(False)
+        self.parse_addresses_btn.setStyleSheet(AppStyles.button_warning(font_size="11px"))
+        self.parse_addresses_btn.clicked.connect(self.parse_visible_addresses)
+        self.parse_addresses_btn.setToolTip("Парсить адреси у неправильному форматі (тільки видимі рядки)")
+        row1.addWidget(self.parse_addresses_btn)
         
         # Undo/Redo
         self.undo_btn = QPushButton("⏪ Відмінити")
@@ -449,7 +452,8 @@ class MainWindow(QMainWindow):
             'save_as': self.save_as_btn,
             'search': self.search_btn,
             'auto_process': self.auto_process_btn,
-            'semi_auto': self.semi_auto_btn
+            'semi_auto': self.semi_auto_btn,
+            'parse_addresses': self.parse_addresses_btn  # ДОДАНО
         }
         self.ui_state.enable_buttons_for_file_loaded(buttons)
         
@@ -896,6 +900,108 @@ class MainWindow(QMainWindow):
                 self.logger.error(f"Помилка оновлення кешу: {e}")
                 self.status_bar.setText(f"❌ Помилка: {e}")
                 QMessageBox.critical(self, "Помилка", f"Не вдалося оновити кеш:\n{e}")
+                
+
+    def parse_visible_addresses(self):
+        """Парсить адреси у видимих (відфільтрованих) рядках"""
+        if not self.file_manager.excel_handler.df or self.file_manager.excel_handler.df.empty:
+            QMessageBox.warning(self, "Увага", "Немає завантаженого файлу")
+            return
+        
+        mapping = self.file_manager.excel_handler.column_mapping
+        if not mapping:
+            QMessageBox.warning(self, "Увага", "Спочатку налаштуйте відповідність стовпців")
+            return
+        
+        # Підтвердження
+        reply = QMessageBox.question(
+            self,
+            "Парсинг адрес",
+            "Розпарсити адреси у видимих рядках?\n\n"
+            "Це знайде рядки де вся адреса записана в одному полі\n"
+            "та розділить її на окремі компоненти.\n\n"
+            "Продовжити?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply != QMessageBox.Yes:
+            return
+        
+        # Імпортуємо функцію парсингу
+        from utils.address_parser import parse_full_address_text, is_full_address_in_text
+        import pandas as pd
+        
+        df = self.file_manager.excel_handler.df
+        parsed_count = 0
+        
+        # Знаходимо індекси колонок
+        street_cols = mapping.get('street', [])
+        city_cols = mapping.get('city', [])
+        building_cols = mapping.get('building', [])
+        
+        if not street_cols:
+            QMessageBox.warning(self, "Помилка", "Колонка 'Вулиця' не налаштована")
+            return
+        
+        street_col = street_cols[0]
+        city_col = city_cols[0] if city_cols else None
+        building_col = building_cols[0] if building_cols else None
+        
+        # Перебираємо ТІЛЬКИ ВИДИМІ рядки
+        self.status_bar.setText("⏳ Парсинг адрес...")
+        QApplication.processEvents()
+        
+        for visual_row in range(self.table.rowCount()):
+            # Пропускаємо приховані рядки (відфільтровані)
+            if self.table.isRowHidden(visual_row):
+                continue
+            
+            # Отримуємо значення з таблиці
+            street_item = self.table.item(visual_row, street_col)
+            if not street_item:
+                continue
+            
+            street_value = street_item.text()
+            
+            # Перевіряємо чи це повна адреса
+            if is_full_address_in_text(street_value):
+                # Парсимо
+                parsed = parse_full_address_text(street_value)
+                
+                # Записуємо в DataFrame
+                if city_col is not None and parsed['city']:
+                    df.iloc[visual_row, city_col] = parsed['city']
+                    city_item = self.table.item(visual_row, city_col)
+                    if city_item:
+                        city_item.setText(parsed['city'])
+                
+                if parsed['street']:
+                    df.iloc[visual_row, street_col] = parsed['street']
+                    street_item.setText(parsed['street'])
+                
+                if building_col is not None and parsed['building']:
+                    df.iloc[visual_row, building_col] = parsed['building']
+                    building_item = self.table.item(visual_row, building_col)
+                    if building_item:
+                        building_item.setText(parsed['building'])
+                
+                parsed_count += 1
+        
+        self.status_bar.setText(f"✅ Розпарсовано {parsed_count} адрес")
+        
+        if parsed_count > 0:
+            QMessageBox.information(
+                self,
+                "Готово",
+                f"Розпарсовано {parsed_count} адрес у видимих рядках!\n\n"
+                "Тепер можете запустити автоматичну обробку знову."
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "Результат",
+                "Не знайдено адрес у неправильному форматі серед видимих рядків."
+            )
     
     def set_index_star(self):
         """Встановлює індекс *"""
