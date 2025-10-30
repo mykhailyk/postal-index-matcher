@@ -1,50 +1,59 @@
-# Python cache
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyc
 
-# Директори кешу
+# Кеш та тимчасові файли
 cache/
+*.pkl
 *.pkl.xz
 
 # Логи
 logs/
 *.log
+*.jsonl
 
-# Налаштування середовища IDE/редакторів
+# Налаштування користувача
+settings.json
+column_mappings/
+!column_mappings/.gitkeep
+
+# PyInstaller збірка
+build/
+dist/
+*.spec
+build_exe.spec
+
+# IDE
 .vscode/
 .idea/
+*.sublime-project
+*.sublime-workspace
 
-# Файли середовища
+# Віртуальне середовище
 .env
 env/
 venv/
 ENV/
 
-# Excel файли вихідні/тимчасові
+# Файли даних (Excel, CSV)
 *.xlsx
 *.xls
 *.csv
+!data/.gitkeep
 
-# Файли налаштувань проєкту
-settings.json
-*.json
-
-# Build та дистрибутиви
-build_exe.spec
-dist/
-build/
-
-# Схеми IDE/редакторів
-*.sublime-project
-*.sublime-workspace
-
-# Інші тимчасові файли
+# Бекапи
 *.bak
 *.tmp
+*_backup.py
+main_window_backup.py
+main_window_refactored_example.py
 
-# Мак ОС файли
+# OS
 .DS_Store
-
-# Windows thumbnail cache files
 Thumbs.db
+
+# Інше
+requirements.txt
+README.md

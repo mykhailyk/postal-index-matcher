@@ -28,9 +28,17 @@ COLUMN_MAPPINGS_DIR = os.path.join(BASE_PATH, 'column_mappings')
 # Шлях до файлу налаштувань
 SETTINGS_FILE = os.path.join(BASE_PATH, 'settings.json')
 
-# Magistral - ФІКСОВАНИЙ ШЛЯХ (мережевий диск)
+# ==================== MAGISTRAL - ФІКСОВАНИЙ ШЛЯХ ====================
+# Завжди на мережевому диску X:
 MAGISTRAL_CSV_PATH = r'X:\!obmin\UkrPoshta\magistral.csv'
+
+# Кеш magistral зберігається локально (біля EXE)
 MAGISTRAL_CACHE_PATH = os.path.join(CACHE_DIR, 'normalized_magistral.pkl')
+
+# Індекси UkrPoshta (для каскадної форми)
+UKRPOSHTA_INDEX_PATH = os.path.join(CACHE_DIR, 'ukrposhta_index.pkl')
+CITY_INDEX_CACHE_PATH = os.path.join(CACHE_DIR, 'city_index.pkl')
+REGION_INDEX_CACHE_PATH = os.path.join(CACHE_DIR, 'region_index.pkl')
 
 # Створюємо директорії якщо їх немає
 for dir_path in [DATA_DIR, CACHE_DIR, LOGS_DIR, COLUMN_MAPPINGS_DIR]:
