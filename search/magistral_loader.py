@@ -3,7 +3,6 @@
 """
 import csv
 import pickle
-import lzma  # ⬅️ ДОДАНО
 import os
 from typing import List, Dict
 from models.magistral_record import MagistralRecord
@@ -30,15 +29,13 @@ class MagistralLoader:
         Returns:
             Список MagistralRecord
         """
-        # ⬇️ ВИДАЛЕНО: force_reload = True
+        # Шлях до кешу БЕЗ компресії (швидше!)
+        cache_path = config.MAGISTRAL_CACHE_PATH
         
-        # Шлях до стиснутого кешу
-        cache_xz = config.MAGISTRAL_CACHE_PATH + '.xz'
-        
-        # ⬇️ ПЕРЕВІРЯЄМО КЕШ (якщо НЕ примусове завантаження)
-        if not force_reload and os.path.exists(cache_xz):
+        # Перевіряємо кеш (якщо НЕ примусове завантаження)
+        if not force_reload and os.path.exists(cache_path):
             try:
-                print(f"📦 Завантаження з кешу: {cache_xz}")
+                print(f"📦 Завантаження з кешу: {cache_path}")
                 return self._load_from_cache()
             except Exception as e:
                 print(f"⚠️ Помилка завантаження кешу: {e}")
@@ -151,8 +148,8 @@ class MagistralLoader:
         print(f"✓ Індекс областей: {len(self.index_by_region)} областей")
     
     def _save_to_cache(self):
-        """Зберігає в pickle кеш з компресією"""
-        cache_xz = config.MAGISTRAL_CACHE_PATH + '.xz'
+        """Зберігає в pickle кеш БЕЗ компресії (швидше!)"""
+        cache_path = config.MAGISTRAL_CACHE_PATH
         
         cache_data = {
             'records': self.records,
@@ -160,17 +157,17 @@ class MagistralLoader:
             'index_by_region': self.index_by_region
         }
         
-        # ⬇️ Зберігаємо з lzma компресією
-        with lzma.open(cache_xz, 'wb', preset=6) as f:
+        # Зберігаємо БЕЗ компресії - у 4-6 разів швидше!
+        with open(cache_path, 'wb') as f:
             pickle.dump(cache_data, f, protocol=pickle.HIGHEST_PROTOCOL)
     
     def _load_from_cache(self) -> List[MagistralRecord]:
-        """Завантажує з pickle кешу з компресією"""
-        cache_xz = config.MAGISTRAL_CACHE_PATH + '.xz'
+        """Завантажує з pickle кешу БЕЗ компресії (швидше!)"""
+        cache_path = config.MAGISTRAL_CACHE_PATH
         
         try:
-            # ⬇️ Завантажуємо з lzma
-            with lzma.open(cache_xz, 'rb') as f:
+            # Завантажуємо БЕЗ компресії - у 4-6 разів швидше!
+            with open(cache_path, 'rb') as f:
                 cache_data = pickle.load(f)
             
             self.records = cache_data['records']
@@ -184,7 +181,7 @@ class MagistralLoader:
             print(f"⚠️ Помилка завантаження кешу: {e}")
             # Видаляємо пошкоджений кеш
             try:
-                os.remove(cache_xz)
+                os.remove(cache_path)
             except:
                 pass
             # Перезавантажуємо з CSV

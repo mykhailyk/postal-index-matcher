@@ -288,8 +288,15 @@ class AddressSelectorPanel(QWidget):
         """Встановлює кеш magistral"""
         self.magistral_cache = magistral_records
         
-        if not self.ukr_index.load():
-            self.ukr_index.build(magistral_records)
+        # Спочатку пробуємо завантажити з кешу
+        if self.ukr_index.load():
+            print("✅ UkrposhtaIndex завантажено з кешу")
+            return
+        
+        # Якщо кешу немає - будуємо (це довго ~2 хв)
+        print("⏳ Побудова індексу Укрпошти (це займе ~2 хв)...")
+        self.ukr_index.build(magistral_records)
+        print("✅ Індекс побудовано")
         
         # Для лівої панелі
         cities_with_districts = {}

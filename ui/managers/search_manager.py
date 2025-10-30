@@ -74,15 +74,9 @@ class SearchManager:
             return []
     
     def get_magistral_records(self):
-        """
-        Повертає записи з magistral.csv
-        
-        Returns:
-            Список записів magistral
-        """
-        if self.search_engine and hasattr(self.search_engine, 'magistral_records'):
-            return self.search_engine.magistral_records
-        return []
+        """Повертає всі magistral записи (УЖЕ завантажені!)"""
+        # Використовуємо вже завантажені дані, НЕ перезавантажуємо!
+        return self.search_engine.magistral_records
     
     def refresh_cache(self, force_reload: bool = True):
         """

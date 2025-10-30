@@ -90,9 +90,15 @@ class MainWindow(QMainWindow):
         self._setup_callbacks()
         self._setup_shortcuts()
         
-        # Запускаємо фонове завантаження кешу
+        # Кеш УЖЕ завантажений в main.py перед створенням вікна
         self._cache_loaded = False
-        self._start_background_cache_loading()
+        
+        # Отримуємо вже завантажені дані (БЕЗ перезавантаження)
+        magistral_records = self.search_manager.get_magistral_records()
+        if magistral_records and self.address_panel:
+            self.address_panel.set_magistral_cache(magistral_records)
+            self._cache_loaded = True
+            self.logger.info(f"Address panel отримав {len(magistral_records)} записів з кешу")
         
         self.logger.info("GUI ініціалізовано")
     

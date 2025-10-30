@@ -195,15 +195,20 @@ class ResultsPanel(QWidget):
                 for line in buildings_lines[1:]:
                     text += f"\n{line}"
             
-            # РЯДОК 3: Індекс
-            text += f"\n{index} ({confidence}%)"
-            
-            # Додаткова інформація
-            if not_working:
-                if 'Тимчасово не функціонує' in not_working:
-                    text += " ⚠️"
-                if 'ВПЗ' in not_working:
-                    text += " 📦"
+            # РЯДОК 3: Індекс + інформація про роботу
+            if not_working and 'Тимчасово не функціонує' in not_working:
+                # Відділення не працює
+                text += f"\n* (не обслуговується) ⚠️"
+                # Додаємо текст куди переадресовано
+                if ',' in not_working:
+                    redirect_text = not_working.split(',', 1)[1].strip()
+                    if redirect_text:
+                        text += f"\n{redirect_text}"
+                else:
+                    text += f"\n{not_working}"
+            else:
+                # Відділення працює
+                text += f"\n{index} ({confidence}%)"
             
             item = QListWidgetItem(text)
             item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -220,21 +225,16 @@ class ResultsPanel(QWidget):
         """Обробка подвійного кліку на результат"""
         result = item.data(Qt.UserRole)
         if result:
-            index = result.get('index', '')
             not_working = result.get('not_working', '')
             
-            if 'Тимчасово не функціонує' in not_working and 'ВПЗ' not in not_working:
-                index = '*'
-            elif 'ВПЗ' in not_working:
-                import re
-                match = re.search(r'(\d{5})', not_working)
-                if match:
-                    index = match.group(1)
-                else:
-                    index = '*'
-            
-            if index:
-                self.index_selected.emit(index)
+            # Якщо відділення не працює → встановлюємо *
+            if not_working and 'Тимчасово не функціонує' in not_working:
+                self.index_selected.emit('*')
+            else:
+                # Відділення працює → звичайний індекс
+                index = result.get('index', '')
+                if index:
+                    self.index_selected.emit(index)
     
     def get_selected_result(self):
         """Повертає вибраний результат"""
