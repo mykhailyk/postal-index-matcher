@@ -10,9 +10,8 @@ from PyQt5.QtWidgets import (
     QProgressBar, QHeaderView, QAbstractItemView, QFrame, 
     QComboBox, QShortcut, QApplication, QCheckBox, QSpinBox
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QColor, QKeySequence
-
 # Менеджери
 from ui.managers import FileManager, SearchManager, ProcessingManager, UIStateManager
 from ui.styles import AppStyles
@@ -29,6 +28,24 @@ from utils.settings_manager import SettingsManager
 from utils.logger import Logger
 import config
 
+class CacheLoaderThread(QThread):
+    """Фоновий потік для завантаження magistral cache"""
+    finished = pyqtSignal(list)
+    progress = pyqtSignal(str)
+    
+    def __init__(self, search_manager):
+        super().__init__()
+        self.search_manager = search_manager
+    
+    def run(self):
+        """Виконується у фоновому потоці"""
+        try:
+            self.progress.emit("⏳ Завантаження довідника у фоні...")
+            records = self.search_manager.get_magistral_records()
+            self.finished.emit(records)
+        except Exception as e:
+            self.progress.emit(f"❌ Помилка: {e}")
+            self.finished.emit([])
 
 class MainWindow(QMainWindow):
     """
@@ -73,8 +90,9 @@ class MainWindow(QMainWindow):
         self._setup_callbacks()
         self._setup_shortcuts()
         
-        # Завантажуємо magistral cache
-        self._load_magistral_cache()
+        # Запускаємо фонове завантаження кешу
+        self._cache_loaded = False
+        self._start_background_cache_loading()
         
         self.logger.info("GUI ініціалізовано")
     
@@ -386,15 +404,31 @@ class MainWindow(QMainWindow):
         down_shortcut = QShortcut(QKeySequence(Qt.Key_Down), self)
         down_shortcut.activated.connect(self.go_to_next_row)
     
-    def _load_magistral_cache(self):
-        """Завантажує magistral cache для address_panel"""
-        try:
-            magistral_records = self.search_manager.get_magistral_records()
-            if magistral_records and self.address_panel:
-                self.address_panel.set_magistral_cache(magistral_records)
-                self.logger.info(f"Magistral cache завантажено: {len(magistral_records)} записів")
-        except Exception as e:
-            self.logger.error(f"Помилка завантаження magistral cache: {e}")
+    def _start_background_cache_loading(self):
+        """Запускає фонове завантаження кешу"""
+        self.cache_thread = CacheLoaderThread(self.search_manager)
+        self.cache_thread.progress.connect(self._on_cache_progress)
+        self.cache_thread.finished.connect(self._on_cache_loaded)
+        self.cache_thread.start()
+        
+        self.status_bar.setText("⏳ Довідник завантажується у фоні...")
+        self.logger.info("Запущено фонове завантаження magistral cache")
+    
+    def _on_cache_progress(self, message: str):
+        """Оновлення прогресу завантаження"""
+        self.status_bar.setText(message)
+    
+    def _on_cache_loaded(self, records: list):
+        """Колбек після завантаження кешу"""
+        if records and self.address_panel:
+            self.address_panel.set_magistral_cache(records)
+            self.logger.info(f"Magistral cache завантажено: {len(records)} записів")
+            self._cache_loaded = True
+            self.status_bar.setText(f"✅ Довідник завантажено ({len(records):,} записів). Готово!")
+        else:
+            self.logger.error("Не вдалося завантажити magistral cache")
+            self.status_bar.setText("⚠️ Помилка завантаження довідника")
+            self._cache_loaded = False
     
     # ==================== ОБРОБНИКИ СИГНАЛІВ ====================
     
@@ -591,10 +625,18 @@ class MainWindow(QMainWindow):
     
     def search_address(self):
         """Пошук адреси через SearchManager"""
+        # Перевіряємо чи завантажено довідник
+        if not self._cache_loaded:
+            QMessageBox.information(
+                self, 
+                "Завантаження", 
+                "Довідник міст ще завантажується у фоні.\n\nБудь ласка, зачекайте."
+            )
+            return
+        
         if self.current_row < 0:
             QMessageBox.warning(self, "Увага", "Оберіть рядок для пошуку")
             return
-        
         try:
             self.status_bar.setText("🔍 Пошук...")
             
