@@ -933,6 +933,7 @@ class MainWindow(QMainWindow):
         
         df = self.file_manager.excel_handler.df
         parsed_count = 0
+        detected_count = 0  # Скільки знайшли
         
         # Знаходимо індекси колонок
         street_cols = mapping.get('street', [])
@@ -951,6 +952,14 @@ class MainWindow(QMainWindow):
         self.status_bar.setText("⏳ Парсинг адрес...")
         QApplication.processEvents()
         
+        print("\n" + "="*80)
+        print("🔧 ПОЧАТОК ПАРСИНГУ АДРЕС")
+        print("="*80)
+        print(f"Колонка 'Вулиця': {street_col}")
+        print(f"Колонка 'Місто': {city_col}")
+        print(f"Колонка 'Будинок': {building_col}")
+        print("="*80 + "\n")
+        
         for visual_row in range(self.table.rowCount()):
             # Пропускаємо приховані рядки (відфільтровані)
             if self.table.isRowHidden(visual_row):
@@ -965,42 +974,81 @@ class MainWindow(QMainWindow):
             
             # Перевіряємо чи це повна адреса
             if is_full_address_in_text(street_value):
+                detected_count += 1
+                
+                print(f"\n📍 РЯДОК {visual_row + 1}:")
+                print(f"   Вихідний текст: {street_value[:100]}...")
+                
                 # Парсимо
                 parsed = parse_full_address_text(street_value)
                 
+                print(f"   ✓ Індекс: '{parsed['index']}'")
+                print(f"   ✓ Місто: '{parsed['city']}'")
+                print(f"   ✓ Вулиця: '{parsed['street']}'")
+                print(f"   ✓ Будинок: '{parsed['building']}'")
+                
+                # Перевіряємо що витягли
+                if not parsed['city'] and not parsed['street']:
+                    print(f"   ⚠️ ПРОПУЩЕНО: не вдалося витягти місто та вулицю")
+                    continue
+                
                 # Записуємо в DataFrame
+                updated = False
+                
                 if city_col is not None and parsed['city']:
+                    old_city = df.iloc[visual_row, city_col] if pd.notna(df.iloc[visual_row, city_col]) else ""
                     df.iloc[visual_row, city_col] = parsed['city']
                     city_item = self.table.item(visual_row, city_col)
                     if city_item:
                         city_item.setText(parsed['city'])
+                    print(f"   📝 Місто: '{old_city}' → '{parsed['city']}'")
+                    updated = True
                 
                 if parsed['street']:
                     df.iloc[visual_row, street_col] = parsed['street']
                     street_item.setText(parsed['street'])
+                    print(f"   📝 Вулиця: → '{parsed['street']}'")
+                    updated = True
                 
                 if building_col is not None and parsed['building']:
+                    old_building = df.iloc[visual_row, building_col] if pd.notna(df.iloc[visual_row, building_col]) else ""
                     df.iloc[visual_row, building_col] = parsed['building']
                     building_item = self.table.item(visual_row, building_col)
                     if building_item:
                         building_item.setText(parsed['building'])
+                    print(f"   📝 Будинок: '{old_building}' → '{parsed['building']}'")
+                    updated = True
                 
-                parsed_count += 1
+                if updated:
+                    parsed_count += 1
+                    print(f"   ✅ ОНОВЛЕНО")
+                else:
+                    print(f"   ⚠️ НЕ ОНОВЛЕНО (порожні дані)")
         
-        self.status_bar.setText(f"✅ Розпарсовано {parsed_count} адрес")
+        print("\n" + "="*80)
+        print(f"🏁 ЗАВЕРШЕНО ПАРСИНГ")
+        print(f"   Знайдено адрес у неправильному форматі: {detected_count}")
+        print(f"   Успішно розпарсовано: {parsed_count}")
+        print("="*80 + "\n")
+        
+        self.status_bar.setText(f"✅ Розпарсовано {parsed_count} з {detected_count} адрес")
         
         if parsed_count > 0:
             QMessageBox.information(
                 self,
                 "Готово",
-                f"Розпарсовано {parsed_count} адрес у видимих рядках!\n\n"
+                f"Знайдено адрес у неправильному форматі: {detected_count}\n"
+                f"Успішно розпарсовано: {parsed_count}\n\n"
+                f"Дивіться деталі в консолі.\n\n"
                 "Тепер можете запустити автоматичну обробку знову."
             )
         else:
             QMessageBox.information(
                 self,
                 "Результат",
-                "Не знайдено адрес у неправильному форматі серед видимих рядків."
+                f"Знайдено адрес у неправильному форматі: {detected_count}\n"
+                f"Успішно розпарсовано: {parsed_count}\n\n"
+                "Дивіться деталі в консолі."
             )
     
     def set_index_star(self):

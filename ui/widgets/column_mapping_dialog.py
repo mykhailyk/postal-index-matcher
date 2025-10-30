@@ -43,10 +43,32 @@ class ColumnMappingDialog(QDialog):
     def init_ui(self):
         """Ініціалізує UI"""
         self.setWindowTitle("Налаштування відповідності стовпців")
-        self.setMinimumSize(1100, 350)  # ⬅️ ЗМІНЕНО: ширше і нижче
-        self.resize(1200, 450)  # ⬅️ ДОДАНО: початковий розмір
+        
+        # Отримуємо розмір екрану
+        if self.parent():
+            parent_geometry = self.parent().geometry()
+            screen_height = parent_geometry.height()
+        else:
+            from PyQt5.QtWidgets import QApplication
+            screen = QApplication.primaryScreen().geometry()
+            screen_height = screen.height()
+        
+        # Встановлюємо розмір діалогу (не більше 80% висоти екрану)
+        dialog_width = 1200
+        dialog_height = min(600, int(screen_height * 0.8))
+        
+        self.setMinimumSize(1000, 400)
+        self.resize(dialog_width, dialog_height)
+        
+        # Центруємо відносно батьківського вікна
+        if self.parent():
+            parent_rect = self.parent().geometry()
+            x = parent_rect.x() + (parent_rect.width() - dialog_width) // 2
+            y = parent_rect.y() + (parent_rect.height() - dialog_height) // 2
+            self.move(x, y)
         
         layout = QVBoxLayout()
+
         
         # Заголовок
         title = QLabel("⚙ Налаштування відповідності стовпців Excel")
@@ -87,7 +109,7 @@ class ColumnMappingDialog(QDialog):
             
             # Список з чекбоксами
             list_widget = QListWidget()
-            list_widget.setMaximumHeight(80)
+            list_widget.setMaximumHeight(60)
             list_widget.setMaximumWidth(250)
             
             for i, col_name in enumerate(self.column_names):
@@ -115,7 +137,7 @@ class ColumnMappingDialog(QDialog):
         preview_layout = QVBoxLayout()
         
         self.preview_table = QTableWidget()
-        self.preview_table.setMaximumHeight(100)
+        self.preview_table.setMaximumHeight(80)
         self.update_preview()
         
         preview_layout.addWidget(self.preview_table)
