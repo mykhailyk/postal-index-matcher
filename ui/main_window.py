@@ -113,18 +113,40 @@ class MainWindow(QMainWindow):
         main_splitter.addWidget(right_panel)
         
         main_splitter.setSizes([1100, 600])
-        main_layout.addWidget(main_splitter)
         
-        # Статус бар
+        # Вертикальний splitter для можливості зміни висоти статус бару
+        vertical_splitter = QSplitter(Qt.Vertical)
+        vertical_splitter.addWidget(main_splitter)
+        
+        # Контейнер для статус бару та прогрес бару
+        status_container = QWidget()
+        status_layout = QVBoxLayout()
+        status_layout.setSpacing(2)
+        status_layout.setContentsMargins(0, 0, 0, 0)
+        status_container.setLayout(status_layout)
+        
+        # Статус бар з мінімальною висотою
         self.status_bar = QLabel("Готово до роботи")
         self.status_bar.setStyleSheet(AppStyles.status_bar())
-        main_layout.addWidget(self.status_bar)
+        self.status_bar.setMinimumHeight(25)
+        self.status_bar.setMaximumHeight(60)
+        status_layout.addWidget(self.status_bar)
         
         # Прогрес бар
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         self.progress_bar.setStyleSheet(AppStyles.progress_bar())
-        main_layout.addWidget(self.progress_bar)
+        self.progress_bar.setMaximumHeight(20)
+        status_layout.addWidget(self.progress_bar)
+        
+        vertical_splitter.addWidget(status_container)
+        
+        # Встановлюємо початкові розміри: основна область велика, статус - маленький
+        vertical_splitter.setSizes([700, 30])
+        vertical_splitter.setStretchFactor(0, 1) 
+        vertical_splitter.setStretchFactor(1, 0)  
+        
+        main_layout.addWidget(vertical_splitter)
     
     def _create_top_panel(self):
         """Верхня панель управління"""
