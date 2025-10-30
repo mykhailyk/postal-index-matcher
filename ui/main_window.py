@@ -73,6 +73,10 @@ class MainWindow(QMainWindow):
         )
         self.ui_state = UIStateManager()
         self.logger = Logger()
+        self.sort_state = {}
+        self.current_sort_column = None
+        self.current_sort_order = None
+        
         
         # Поточний стан
         self.current_row = -1
@@ -99,6 +103,35 @@ class MainWindow(QMainWindow):
     
     # ==================== ІНІЦІАЛІЗАЦІЯ UI ====================
     
+    def setup_table_sorting(self):
+        """Налаштовує сортування при кліку на заголовки колонок"""
+        from PyQt5.QtCore import Qt
+        
+        # Отримуємо header таблиці
+        header = self.table.horizontalHeader()
+        
+        # Дозволяємо клік по header
+        header.setSectionsClickable(True)
+        
+        # Підключаємо обробник кліку
+        header.sectionClicked.connect(self.on_header_clicked)
+        
+        # Встановлюємо курсор руки при наведенні
+        header.setCursor(Qt.PointingHandCursor)
+        
+        # Додаємо візуальну підказку
+        header.setStyleSheet("""
+            QHeaderView::section {
+                background-color: #f0f0f0;
+                padding: 8px;
+                border: 1px solid #d0d0d0;
+                font-weight: bold;
+            }
+            QHeaderView::section:hover {
+                background-color: #e0e0e0;
+            }
+        """)   
+       
     def _init_ui(self):
         """Ініціалізація інтерфейсу"""
         self.setWindowTitle(config.WINDOW_TITLE)
@@ -333,6 +366,7 @@ class MainWindow(QMainWindow):
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.itemChanged.connect(self.on_cell_edited)
         self.table.itemSelectionChanged.connect(self.on_row_selected)
+        self.setup_table_sorting()
         layout.addWidget(self.table)
         
         # Панель оригінальних даних
@@ -370,6 +404,92 @@ class MainWindow(QMainWindow):
             panel.setSizes([220, 480])
         
         return panel
+        
+    def on_header_clicked(self, logical_index):
+        """
+        Обробник кліку по заголовку колонки
+        """
+        from utils.logger import Logger
+        
+        # Перевіряємо чи є дані
+        if self.df is None or self.df.empty:
+            return
+        
+        # Визначаємо порядок сортування
+        if self.current_sort_column == logical_index:
+            # Перемикаємо: asc -> desc -> asc
+            if self.current_sort_order == 'asc':
+                self.current_sort_order = 'desc'
+            else:
+                self.current_sort_order = 'asc'
+        else:
+            # Нова колонка - починаємо з asc
+            self.current_sort_column = logical_index
+            self.current_sort_order = 'asc'
+        
+        # Отримуємо назву колонки
+        column_name = self.df.columns[logical_index]
+        
+        # Виконуємо сортування
+        self.sort_dataframe(column_name, self.current_sort_order)
+        
+        # Оновлюємо відображення таблиці
+        self.load_data_to_table()
+        
+        # Оновлюємо візуальну підказку
+        self.update_header_sort_indicator(logical_index, self.current_sort_order)
+        
+        # Логуємо
+        logger = Logger()
+        logger.info(f"Сортування: '{column_name}' ({self.current_sort_order})")
+        
+    def sort_dataframe(self, column_name, order='asc'):
+        """
+        Сортує DataFrame по заданій колонці
+        """
+        from utils.logger import Logger
+        
+        if self.df is None or column_name not in self.df.columns:
+            return
+        
+        # Визначаємо напрямок
+        ascending = (order == 'asc')
+        
+        try:
+            # Заповнюємо NaN пустими рядками
+            self.df[column_name] = self.df[column_name].fillna('')
+            
+            # Сортуємо
+            self.df = self.df.sort_values(
+                by=column_name,
+                ascending=ascending,
+                na_position='last'
+            )
+            
+            # Скидаємо індекс
+            self.df = self.df.reset_index(drop=True)
+            
+        except Exception as e:
+            logger = Logger()
+            logger.error(f"Помилка сортування: {e}")
+            
+    def update_header_sort_indicator(self, column_index, order):
+        """
+        Оновлює візуальний індикатор сортування в заголовку
+        """
+        header = self.table.horizontalHeader()
+        
+        # Очищаємо всі індикатори
+        for i in range(self.table.columnCount()):
+            header_text = self.table.horizontalHeaderItem(i).text()
+            # Видаляємо стрілки якщо є
+            header_text = header_text.replace(' ▲', '').replace(' ▼', '')
+            self.table.horizontalHeaderItem(i).setText(header_text)
+        
+        # Додаємо індикатор до поточної колонки
+        header_text = self.table.horizontalHeaderItem(column_index).text()
+        arrow = ' ▲' if order == 'asc' else ' ▼'
+        self.table.horizontalHeaderItem(column_index).setText(header_text + arrow)
     
     # ==================== СИГНАЛИ ТА КОЛБЕКИ ====================
     

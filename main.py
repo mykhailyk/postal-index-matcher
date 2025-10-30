@@ -89,21 +89,23 @@ from ui.main_window import MainWindow
 def main():
     """Головна функція"""
     
+    # ========================================================================
+    # ВАЖЛИВО: High DPI ПЕРЕД створенням QApplication
+    # ========================================================================
+    if hasattr(Qt, 'AA_EnableHighDpiScaling'):
+        QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    if hasattr(Qt, 'AA_UseHighDpiPixmaps'):
+        QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    
     # Ініціалізуємо logger
     logger = Logger()
     logger.info("="*80)
     logger.info("Запуск PrintTo Address Matcher v2.1")
     logger.info("="*80)
     
-    # Створюємо додаток
+    # Створюємо додаток (ПІСЛЯ налаштування High DPI)
     app = QApplication(sys.argv)
     app.setApplicationName(config.WINDOW_TITLE)
-    
-    # Високе DPI розширення для Windows
-    if hasattr(Qt, 'AA_EnableHighDpiScaling'):
-        QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
-    if hasattr(Qt, 'AA_UseHighDpiPixmaps'):
-        QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     
     logger.info("Створення головного вікна...")
     
