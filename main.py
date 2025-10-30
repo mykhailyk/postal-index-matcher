@@ -1,134 +1,154 @@
+"""
+PrintTo Address Matcher v2.1
+Головний файл програми
+"""
+
 import sys
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QProgressBar
+import os
+from datetime import datetime
+
+# ============================================================================
+# ПЕРЕНАПРАВЛЕННЯ STDOUT/STDERR В ЛОГИ (для EXE без консолі)
+# ============================================================================
+
+class StdoutLogger:
+    """Перенаправляє stdout в лог файл"""
+    
+    def __init__(self, log_file):
+        self.log_file = log_file
+        
+    def write(self, message):
+        if message.strip():  # Не писати пусті рядки
+            try:
+                with open(self.log_file, 'a', encoding='utf-8') as f:
+                    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    f.write(f"[{timestamp}] {message}\n")
+                    f.flush()
+            except:
+                pass  # Ігноруємо помилки запису
+    
+    def flush(self):
+        pass
+
+
+class StderrLogger:
+    """Перенаправляє stderr в лог файл"""
+    
+    def __init__(self, log_file):
+        self.log_file = log_file
+        
+    def write(self, message):
+        if message.strip():  # Не писати пусті рядки
+            try:
+                with open(self.log_file, 'a', encoding='utf-8') as f:
+                    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    f.write(f"[{timestamp}] ERROR: {message}\n")
+                    f.flush()
+            except:
+                pass  # Ігноруємо помилки запису
+    
+    def flush(self):
+        pass
+
+
+# Налаштовуємо перенаправлення (ТІЛЬКИ для EXE)
+if getattr(sys, 'frozen', False):
+    # Програма запущена як EXE
+    base_dir = os.path.dirname(sys.executable)
+    logs_dir = os.path.join(base_dir, 'logs')
+    os.makedirs(logs_dir, exist_ok=True)
+    
+    # Файл для всього console output
+    log_file = os.path.join(logs_dir, 'console_output.log')
+    
+    # Перенаправляємо stdout і stderr
+    sys.stdout = StdoutLogger(log_file)
+    sys.stderr = StderrLogger(log_file)
+    
+    # Записуємо початок сесії
+    with open(log_file, 'a', encoding='utf-8') as f:
+        f.write("\n" + "="*80 + "\n")
+        f.write(f"Програма запущена: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write("="*80 + "\n\n")
+
+# ============================================================================
+# ЗВИЧАЙНІ ІМПОРТИ (після перенаправлення)
+# ============================================================================
+
+from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt
-from ui.main_window import MainWindow
-from utils.logger import Logger
 import config
 
+# Імпортуємо logger
+from utils.logger import Logger
 
-class LoadingSplash(QWidget):
-    """Splash screen"""
-    
-    def __init__(self):
-        super().__init__()
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-        self.setFixedSize(450, 200)
-        
-        # Центруємо
-        screen = QApplication.primaryScreen().geometry()
-        x = (screen.width() - self.width()) // 2
-        y = (screen.height() - self.height()) // 2
-        self.move(x, y)
-        
-        layout = QVBoxLayout()
-        layout.setContentsMargins(30, 30, 30, 30)
-        layout.setSpacing(15)
-        
-        self.setStyleSheet("""
-            QWidget {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #34495e, stop:1 #2c3e50);
-                border-radius: 10px;
-                border: 2px solid #3498db;
-            }
-        """)
-        
-        title = QLabel("Print to Address Matcher v2.1")
-        title.setStyleSheet("color: white; font-size: 18px; font-weight: bold; background: transparent;")
-        title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title)
-        
-        self.status_label = QLabel("Завантаження...")
-        self.status_label.setStyleSheet("color: #ecf0f1; font-size: 14px; background: transparent;")
-        self.status_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.status_label)
-        
-        self.progress = QProgressBar()
-        self.progress.setStyleSheet("""
-            QProgressBar {
-                border: 2px solid #34495e;
-                border-radius: 5px;
-                text-align: center;
-                color: white;
-                background-color: #2c3e50;
-            }
-            QProgressBar::chunk {
-                background: #3498db;
-            }
-        """)
-        self.progress.setMinimum(0)
-        self.progress.setMaximum(100)
-        layout.addWidget(self.progress)
-        
-        self.details = QLabel("")
-        self.details.setStyleSheet("color: #95a5a6; font-size: 10px; background: transparent;")
-        self.details.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.details)
-        
-        self.setLayout(layout)
-    
-    def update(self, message, progress, details=""):
-        self.status_label.setText(message)
-        self.progress.setValue(progress)
-        self.details.setText(details)
-        QApplication.processEvents()
+# Імпортуємо головне вікно
+from ui.main_window import MainWindow
 
 
 def main():
-    """Точка входу з splash screen"""
-    logger = Logger()
-    logger.info("=" * 80)
-    logger.info("Запуск програми Address Matcher v2.1")
-    logger.info("=" * 80)
+    """Головна функція"""
     
-    try:
-        app = QApplication(sys.argv)
-        app.setStyle('Fusion')
-        
-        # Показуємо splash
-        splash = LoadingSplash()
-        splash.show()
-        splash.update("Ініціалізація...", 10)
-        
-        # Завантажуємо пошуковий движок
-        splash.update("Завантаження бази даних...", 30, "Magistral.csv (330K записів)")
-        from search.hybrid_search import HybridSearch
-        search_engine = HybridSearch()
-        
-        splash.update("База завантажена!", 60, f"{len(search_engine.magistral_records):,} записів")
-        
-        # Будуємо індекс Укрпошти (ЯКЩО потрібно)
-        splash.update("Підготовка довідника...", 70, "Побудова індексу міст")
-        from utils.ukrposhta_index import UkrposhtaIndex
-        ukr_index = UkrposhtaIndex()
-        if not ukr_index.load():
-            splash.update("Побудова індексу Укрпошти...", 75, "Це займе ~2 хв")
-            ukr_index.build(search_engine.magistral_records)
-        
-        splash.update("Індекс готовий!", 85)
-        
-        # Створюємо вікно
-        splash.update("Створення інтерфейсу...", 90)
-        window = MainWindow()
-        
-        # Передаємо УЖЕ ГОТОВИЙ індекс
-        window.address_panel.ukr_index = ukr_index
-        window.address_panel.magistral_cache = search_engine.magistral_records
-        
-        splash.update("Готово!", 100)
-        import time
-        time.sleep(0.2)
-        
-        splash.close()
-        window.show()
-        
-        logger.info("Програма успішно запущена")
-        sys.exit(app.exec_())
-        
-    except Exception as e:
-        logger.critical(f"Критична помилка: {e}")
-        raise
+    # Ініціалізуємо logger
+    logger = Logger()
+    logger.info("="*80)
+    logger.info("Запуск PrintTo Address Matcher v2.1")
+    logger.info("="*80)
+    
+    # Створюємо додаток
+    app = QApplication(sys.argv)
+    app.setApplicationName(config.WINDOW_TITLE)
+    
+    # Високе DPI розширення для Windows
+    if hasattr(Qt, 'AA_EnableHighDpiScaling'):
+        QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    if hasattr(Qt, 'AA_UseHighDpiPixmaps'):
+        QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    
+    logger.info("Створення головного вікна...")
+    
+    # Створюємо і показуємо головне вікно
+    window = MainWindow()
+    window.show()
+    
+    logger.info("Програма готова до роботи")
+    
+    # Запускаємо event loop
+    sys.exit(app.exec_())
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception as e:
+        # Якщо критична помилка - пишемо в лог
+        import traceback
+        error_msg = f"КРИТИЧНА ПОМИЛКА:\n{traceback.format_exc()}"
+        
+        # Виводимо (піде в console_output.log якщо EXE)
+        print(error_msg)
+        
+        # Також пишемо в основний лог якщо можливо
+        try:
+            logger = Logger()
+            logger.critical(error_msg)
+        except:
+            pass
+        
+        # Спробуємо показати діалог
+        try:
+            from PyQt5.QtWidgets import QMessageBox, QApplication
+            app = QApplication.instance()
+            if app is None:
+                app = QApplication(sys.argv)
+            
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Critical)
+            msg.setWindowTitle("Помилка запуску")
+            msg.setText("Не вдалося запустити програму")
+            msg.setDetailedText(error_msg)
+            msg.exec_()
+        except:
+            pass
+        
+        sys.exit(1)
