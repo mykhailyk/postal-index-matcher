@@ -904,7 +904,7 @@ class MainWindow(QMainWindow):
 
     def parse_visible_addresses(self):
         """Парсить адреси у видимих (відфільтрованих) рядках"""
-        if not self.file_manager.excel_handler.df or self.file_manager.excel_handler.df.empty:
+        if self.file_manager.excel_handler.df is None or self.file_manager.excel_handler.df.empty:
             QMessageBox.warning(self, "Увага", "Немає завантаженого файлу")
             return
         

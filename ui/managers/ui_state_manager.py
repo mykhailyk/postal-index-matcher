@@ -106,7 +106,8 @@ class UIStateManager(QObject):
         """
         buttons_to_enable = [
             'column_mapping', 'save', 'save_as', 
-            'search', 'auto_process', 'semi_auto'
+            'search', 'auto_process', 'semi_auto',
+            'parse_addresses'  # ДОДАНО
         ]
         
         for name in buttons_to_enable:
