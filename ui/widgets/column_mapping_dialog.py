@@ -1,317 +1,548 @@
 """
-Діалог налаштування відповідності стовпців
+Оновлений діалог налаштування колонок з ВИДИМИМИ галочками
 """
+
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, 
-    QPushButton, QGroupBox, QGridLayout, QTableWidget, QTableWidgetItem,
-    QComboBox, QMessageBox, QLineEdit, QInputDialog, QListWidgetItem
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
+    QComboBox, QCheckBox, QScrollArea, QWidget, QFrame, QSplitter
 )
-from PyQt5.QtCore import Qt
-from handlers.column_mapping_handler import ColumnMappingHandler
+from PyQt5.QtCore import Qt, QSettings
+from PyQt5.QtGui import QColor
 import pandas as pd
+from typing import Dict, List
+
+from handlers.column_mapping_handler import ColumnMappingHandler
+from utils.logger import Logger
+
+
+class MultiSelectComboBox(QComboBox):
+    """
+    Випадаючий список з можливістю множинного вибору через чекбокси
+    З ВИДИМИМИ галочками ☑ / ☐
+    """
+    
+    def __init__(self, items: List[str], parent=None):
+        super().__init__(parent)
+        
+        self.items = items
+        self.checked_items = set()
+        
+        # Додаємо пункти
+        self.addItem("-- Оберіть стовпці --")
+        
+        # Додаємо пункти з порожніми галочками
+        for item in items:
+            self.addItem(f"☐ {str(item)}")
+        
+        # Підключаємо обробник
+        self.view().pressed.connect(self.on_item_pressed)
+        
+        self.setEditable(False)
+    
+    def on_item_pressed(self, index):
+        """Обробка кліку по елементу"""
+        row = index.row()
+        
+        if row == 0:  # Заголовок
+            return
+        
+        # Отримуємо текст без галочки
+        item_text = self.itemText(row).replace("☐ ", "").replace("☑ ", "")
+        
+        # Перемикаємо стан
+        if item_text in self.checked_items:
+            self.checked_items.remove(item_text)
+            # Ставимо порожню галочку
+            self.setItemText(row, f"☐ {item_text}")
+        else:
+            self.checked_items.add(item_text)
+            # Ставимо заповнену галочку
+            self.setItemText(row, f"☑ {item_text}")
+        
+        # Оновлюємо текст в combobox
+        self.update_text()
+    
+    def update_text(self):
+        """Оновлює текст у combobox"""
+        if not self.checked_items:
+            self.setItemText(0, "-- Оберіть стовпці --")
+        else:
+            count = len(self.checked_items)
+            if count == 1:
+                suffix = "стовпець"
+            elif 2 <= count <= 4:
+                suffix = "стовпці"
+            else:
+                suffix = "стовпців"
+            self.setItemText(0, f"✓ Обрано: {count} {suffix}")
+    
+    def get_checked_items(self) -> List[str]:
+        """Повертає список обраних елементів (БЕЗ галочок)"""
+        return list(self.checked_items)
+    
+    def set_checked_items(self, items: List[str]):
+        """Встановлює обрані елементи"""
+        # Очищаємо попередні
+        self.checked_items = set()
+        
+        # Проходимо по всіх пунктах і оновлюємо галочки
+        for row in range(1, self.count()):
+            item_text = self.itemText(row).replace("☐ ", "").replace("☑ ", "")
+            
+            if str(item_text) in [str(item) for item in items]:
+                # Ставимо заповнену галочку
+                self.setItemText(row, f"☑ {item_text}")
+                self.checked_items.add(item_text)
+            else:
+                # Ставимо порожню галочку
+                self.setItemText(row, f"☐ {item_text}")
+        
+        self.update_text()
 
 
 class ColumnMappingDialog(QDialog):
-    """Діалог для налаштування відповідності стовпців"""
+    """
+    Діалог налаштування відповідності стовпців Excel до полів програми
+    """
     
-    def __init__(self, column_names, current_mapping, df_sample, parent=None):
+    def __init__(self, excel_columns: List[str], current_mapping: Dict, 
+                 df_sample: pd.DataFrame, parent=None):
         super().__init__(parent)
         
-        self.column_names = column_names
+        # Конвертуємо всі колонки в string
+        self.excel_columns = [str(col) for col in excel_columns]
         self.current_mapping = current_mapping or {}
         self.df_sample = df_sample
+        self.logger = Logger()
         
-        # Нормалізуємо mapping
-        self.normalize_mapping()
+        # QSettings для збереження налаштувань
+        self.settings = QSettings('PrintTo', 'AddressMatcher')
         
-        self.combos = {}
+        # Комбобокси для кожного поля
+        self.combo_boxes = {}
         
-        self.init_ui()
+        # Splitter
+        self.main_splitter = None
+        
+        self._init_ui()
+        self._load_current_mapping()
+        self._restore_geometry()
+        
+        # Центруємо діалог
+        if parent:
+            self.move(
+                parent.x() + (parent.width() - self.width()) // 2,
+                parent.y() + (parent.height() - self.height()) // 2
+            )
     
-    def normalize_mapping(self):
-        """Нормалізує mapping"""
-        normalized = {}
-        for field, value in self.current_mapping.items():
-            if isinstance(value, int):
-                normalized[field] = [value]
-            elif isinstance(value, list):
-                normalized[field] = value
-            else:
-                normalized[field] = []
-        self.current_mapping = normalized
-    
-    def init_ui(self):
-        """Ініціалізує UI"""
-        self.setWindowTitle("Налаштування відповідності стовпців")
-        
-        # Отримуємо розмір екрану
-        if self.parent():
-            parent_geometry = self.parent().geometry()
-            screen_height = parent_geometry.height()
-        else:
-            from PyQt5.QtWidgets import QApplication
-            screen = QApplication.primaryScreen().geometry()
-            screen_height = screen.height()
-        
-        # Встановлюємо розмір діалогу (не більше 80% висоти екрану)
-        dialog_width = 1200
-        dialog_height = min(600, int(screen_height * 0.8))
-        
-        self.setMinimumSize(1000, 400)
-        self.resize(dialog_width, dialog_height)
-        
-        # Центруємо відносно батьківського вікна
-        if self.parent():
-            parent_rect = self.parent().geometry()
-            x = parent_rect.x() + (parent_rect.width() - dialog_width) // 2
-            y = parent_rect.y() + (parent_rect.height() - dialog_height) // 2
-            self.move(x, y)
+    def _init_ui(self):
+        """Ініціалізація UI"""
+        self.setWindowTitle("⚙ Налаштування відповідності стовпців")
         
         layout = QVBoxLayout()
-
+        layout.setSpacing(8)
+        layout.setContentsMargins(10, 10, 10, 10)
         
         # Заголовок
-        title = QLabel("⚙ Налаштування відповідності стовпців Excel")
-        title.setStyleSheet("font-size: 16px; font-weight: bold; padding: 10px;")
-        layout.addWidget(title)
+        header = QLabel("Налаштуйте відповідність стовпців Excel до полів програми")
+        header.setStyleSheet("""
+            font-size: 13px;
+            font-weight: bold;
+            padding: 8px;
+            background-color: #e3f2fd;
+            border-radius: 4px;
+        """)
+        layout.addWidget(header)
+        
+        # Кнопки схем ВГОРІ
+        scheme_layout = QHBoxLayout()
+        
+        load_btn = QPushButton("📂 Завантажити схему")
+        load_btn.setStyleSheet(self._button_style("#2196F3", size="10px"))
+        load_btn.clicked.connect(self.load_mapping_scheme)
+        scheme_layout.addWidget(load_btn)
+        
+        save_btn = QPushButton("💾 Зберегти схему")
+        save_btn.setStyleSheet(self._button_style("#4CAF50", size="10px"))
+        save_btn.clicked.connect(self.save_mapping_scheme)
+        scheme_layout.addWidget(save_btn)
+        
+        scheme_layout.addStretch()
+        layout.addLayout(scheme_layout)
         
         # Інструкція
         instruction = QLabel(
-            "Поставте галочки напроти стовпців Excel для кожного поля адреси. "
-            "Можна вибрати кілька стовпців (вони об'єднаються через кому)."
+            "💡 Клікайте на пункти у списку щоб поставити/зняти галочки. Можна обрати декілька."
         )
         instruction.setWordWrap(True)
-        instruction.setStyleSheet("padding: 5px; color: #666;")
+        instruction.setStyleSheet("font-size: 10px; color: #666; padding: 3px;")
         layout.addWidget(instruction)
         
-        # Групи налаштувань
-        mapping_group = QGroupBox("Відповідність полів")
-        mapping_layout = QGridLayout()
+        # Головний splitter
+        self.main_splitter = QSplitter(Qt.Vertical)
         
-        # СПИСОК ПОЛІВ БЕЗ "Старий індекс"
+        # === ВЕРХНЯ ЧАСТИНА: Налаштування полів ===
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: 1px solid #ddd; }")
+        
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout()
+        scroll_layout.setSpacing(5)
+        scroll_layout.setContentsMargins(5, 5, 5, 5)
+        scroll_widget.setLayout(scroll_layout)
+        
+        # Поля програми
         fields = [
-            ('client_id', 'ID Клієнта'),
-            ('name', 'ПІБ / Назва'),
-            ('region', 'Область'),
-            ('district', 'Район'),
-            ('city', 'Населений пункт'),
-            ('street', 'Вулиця'),
-            ('building', 'Будинок'),
-            ('index', 'Індекс')
+            ('client_id', '🆔 ID', 'Унікальний ідентифікатор'),
+            ('name', '👤 ПІБ', "Ім'я одержувача"),
+            ('region', '🗺️ Область', 'Область'),
+            ('district', '📍 Район', 'Район'),
+            ('city', '🏙️ Місто', 'Населений пункт'),
+            ('street', '🛣️ Вулиця', 'Назва вулиці'),
+            ('building', '🏠 Будинок', 'Номер будинку'),
+            ('index', '📮 Індекс', 'Поштовий індекс'),
         ]
         
-        row = 0
-        for field_id, field_name in fields:
-            label = QLabel(f"{field_name}:")
-            label.setStyleSheet("font-weight: bold; font-size: 11px;")
-            label.setFixedWidth(120)
-            mapping_layout.addWidget(label, row, 0)
-            
-            # Список з чекбоксами
-            list_widget = QListWidget()
-            list_widget.setMaximumHeight(60)
-            list_widget.setMaximumWidth(250)
-            
-            for i, col_name in enumerate(self.column_names):
-                item = QListWidgetItem(str(col_name))
-                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-                
-                # Чекбокс замість селекції
-                if field_id in self.current_mapping and i in self.current_mapping[field_id]:
-                    item.setCheckState(Qt.Checked)
-                else:
-                    item.setCheckState(Qt.Unchecked)
-                
-                list_widget.addItem(item)
-            
-            self.combos[field_id] = list_widget
-            mapping_layout.addWidget(list_widget, row, 1)
-            
-            row += 1
+        for field_id, field_name, field_desc in fields:
+            field_widget = self._create_field_widget(field_id, field_name, field_desc)
+            scroll_layout.addWidget(field_widget)
         
-        mapping_group.setLayout(mapping_layout)
-        layout.addWidget(mapping_group)
+        scroll_layout.addStretch()
+        scroll.setWidget(scroll_widget)
         
-        # Preview
-        preview_group = QGroupBox("Попередній перегляд (перші 5 рядків)")
+        self.main_splitter.addWidget(scroll)
+        
+        # === НИЖНЯ ЧАСТИНА: Превʼю ===
+        preview_container = QWidget()
         preview_layout = QVBoxLayout()
+        preview_layout.setContentsMargins(0, 5, 0, 0)
+        preview_layout.setSpacing(3)
+        
+        preview_label = QLabel("📋 Приклад даних (перші 5 рядків):")
+        preview_label.setStyleSheet("font-weight: bold; font-size: 11px;")
+        preview_layout.addWidget(preview_label)
         
         self.preview_table = QTableWidget()
-        self.preview_table.setMaximumHeight(80)
-        self.update_preview()
-        
+        self.preview_table.setStyleSheet("""
+            QTableWidget {
+                font-size: 9px;
+                gridline-color: #ddd;
+            }
+            QHeaderView::section {
+                background-color: #f5f5f5;
+                padding: 3px;
+                border: 1px solid #ddd;
+                font-weight: bold;
+                font-size: 9px;
+            }
+        """)
+        self._populate_preview()
         preview_layout.addWidget(self.preview_table)
-        preview_group.setLayout(preview_layout)
-        layout.addWidget(preview_group)
         
-        # Збереження схем
-        schemes_layout = QHBoxLayout()
+        preview_container.setLayout(preview_layout)
+        self.main_splitter.addWidget(preview_container)
         
-        schemes_label = QLabel("Схеми:")
-        schemes_label.setStyleSheet("font-weight: bold;")
-        schemes_layout.addWidget(schemes_label)
+        # Початкові розміри splitter
+        self.main_splitter.setSizes([400, 150])
         
-        self.scheme_combo = QComboBox()
-        self.load_scheme_list()
-        schemes_layout.addWidget(self.scheme_combo, 1)
+        layout.addWidget(self.main_splitter)
         
-        load_scheme_btn = QPushButton("Завантажити")
-        load_scheme_btn.clicked.connect(self.load_scheme)
-        schemes_layout.addWidget(load_scheme_btn)
-        
-        save_scheme_btn = QPushButton("Зберегти")
-        save_scheme_btn.clicked.connect(self.save_scheme)
-        schemes_layout.addWidget(save_scheme_btn)
-        
-        layout.addLayout(schemes_layout)
-        
-        # Кнопки OK/Cancel
-        buttons = QHBoxLayout()
-        
-        preview_btn = QPushButton("Оновити preview")
-        preview_btn.clicked.connect(self.update_preview)
-        buttons.addWidget(preview_btn)
-        
-        buttons.addStretch()
+        # Кнопки OK/Скасувати
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
         
         cancel_btn = QPushButton("Скасувати")
+        cancel_btn.setStyleSheet(self._button_style("#757575"))
         cancel_btn.clicked.connect(self.reject)
-        buttons.addWidget(cancel_btn)
+        button_layout.addWidget(cancel_btn)
         
-        ok_btn = QPushButton("OK")
+        ok_btn = QPushButton("✓ OK")
+        ok_btn.setStyleSheet(self._button_style("#4CAF50"))
+        ok_btn.setDefault(True)
         ok_btn.clicked.connect(self.accept)
-        ok_btn.setStyleSheet("background-color: #4CAF50; color: white; padding: 5px 20px;")
-        buttons.addWidget(ok_btn)
+        button_layout.addWidget(ok_btn)
         
-        layout.addLayout(buttons)
+        layout.addLayout(button_layout)
         
         self.setLayout(layout)
     
-    def get_mapping(self):
-        """Повертає обране mapping"""
+    def _create_field_widget(self, field_id: str, field_name: str, field_desc: str) -> QFrame:
+        """Створює компактний віджет для одного поля"""
+        frame = QFrame()
+        frame.setFrameStyle(QFrame.Box | QFrame.Plain)
+        frame.setStyleSheet("""
+            QFrame {
+                border: 1px solid #e0e0e0;
+                border-radius: 3px;
+                background-color: white;
+            }
+        """)
+        
+        layout = QHBoxLayout()
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(10)
+        
+        # Назва поля
+        label_widget = QWidget()
+        label_layout = QVBoxLayout()
+        label_layout.setSpacing(1)
+        label_layout.setContentsMargins(0, 0, 0, 0)
+        
+        name_label = QLabel(field_name)
+        name_label.setStyleSheet("font-weight: bold; font-size: 11px;")
+        label_layout.addWidget(name_label)
+        
+        desc_label = QLabel(field_desc)
+        desc_label.setStyleSheet("font-size: 9px; color: #888;")
+        label_layout.addWidget(desc_label)
+        
+        label_widget.setLayout(label_layout)
+        label_widget.setFixedWidth(130)
+        layout.addWidget(label_widget)
+        
+        # Випадаючий список
+        combo = MultiSelectComboBox(self.excel_columns)
+        combo.setMinimumWidth(300)
+        combo.setStyleSheet("""
+            QComboBox {
+                border: 1px solid #ddd;
+                border-radius: 3px;
+                padding: 5px 8px;
+                font-size: 10px;
+                background-color: white;
+            }
+            QComboBox:hover {
+                border-color: #2196F3;
+            }
+            QComboBox:focus {
+                border-color: #2196F3;
+                border-width: 2px;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 20px;
+            }
+            QComboBox::down-arrow {
+                image: url(none);
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 5px solid #666;
+                margin-right: 8px;
+            }
+            QComboBox QAbstractItemView {
+                border: 1px solid #ddd;
+                selection-background-color: #e3f2fd;
+                font-size: 10px;
+            }
+        """)
+        
+        self.combo_boxes[field_id] = combo
+        layout.addWidget(combo)
+        
+        layout.addStretch()
+        
+        frame.setLayout(layout)
+        return frame
+    
+    def _populate_preview(self):
+        """Заповнює таблицю превʼю"""
+        if self.df_sample is None or self.df_sample.empty:
+            return
+        
+        df = self.df_sample.head(5)
+        
+        self.preview_table.setRowCount(len(df))
+        self.preview_table.setColumnCount(len(df.columns))
+        self.preview_table.setHorizontalHeaderLabels([str(col) for col in df.columns])
+        
+        for i in range(len(df)):
+            for j in range(len(df.columns)):
+                value = df.iloc[i, j]
+                item = QTableWidgetItem(str(value) if pd.notna(value) else "")
+                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                self.preview_table.setItem(i, j, item)
+        
+        self.preview_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.preview_table.horizontalHeader().setStretchLastSection(True)
+        
+        for i in range(self.preview_table.rowCount()):
+            self.preview_table.setRowHeight(i, 20)
+    
+    def _load_current_mapping(self):
+        """Завантажує поточний mapping у combobox-и"""
+        for field_id, combo in self.combo_boxes.items():
+            if field_id in self.current_mapping:
+                column_indices = self.current_mapping[field_id]
+                column_names = [str(self.excel_columns[idx]) for idx in column_indices 
+                              if idx < len(self.excel_columns)]
+                combo.set_checked_items(column_names)
+    
+    def get_mapping(self) -> Dict[str, List[int]]:
+        """Повертає mapping"""
         mapping = {}
         
-        for field_id, list_widget in self.combos.items():
-            selected_indices = []
+        for field_id, combo in self.combo_boxes.items():
+            checked_items = combo.get_checked_items()
             
-            for i in range(list_widget.count()):
-                item = list_widget.item(i)
-                if item.checkState() == Qt.Checked:
-                    selected_indices.append(i)
-            
-            if selected_indices:
-                mapping[field_id] = selected_indices
+            if checked_items:
+                indices = []
+                for col in checked_items:
+                    try:
+                        idx = self.excel_columns.index(str(col))
+                        indices.append(idx)
+                    except ValueError:
+                        self.logger.warning(f"Колонка '{col}' не знайдена")
+                
+                if indices:
+                    mapping[field_id] = indices
         
         return mapping
     
-    def update_preview(self):
-        """Оновлює preview таблиці"""
+    def accept(self):
+        """Перевірка перед закриттям"""
         mapping = self.get_mapping()
         
-        if not mapping:
+        if 'city' not in mapping:
+            QMessageBox.warning(
+                self,
+                "Увага",
+                "Поле 'Місто' обов'язкове!\nБудь ласка, оберіть стовпець для міста."
+            )
             return
         
-        # Створюємо preview DataFrame
-        preview_data = {}
+        if 'street' not in mapping:
+            reply = QMessageBox.question(
+                self,
+                "Підтвердження",
+                "Поле 'Вулиця' не налаштовано.\n\nПродовжити без вулиці?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply == QMessageBox.No:
+                return
         
-        for field_id, col_indices in mapping.items():
-            values = []
-            for i in range(min(5, len(self.df_sample))):
-                row_values = []
-                for col_idx in col_indices:
-                    if col_idx < len(self.df_sample.columns):
-                        val = self.df_sample.iloc[i, col_idx]
-                        if pd.notna(val):
-                            row_values.append(str(val))
-                
-                values.append(', '.join(row_values) if row_values else '')
-            
-            preview_data[field_id] = values
-        
-        # Відображаємо в таблиці
-        df_preview = pd.DataFrame(preview_data)
-        
-        self.preview_table.setRowCount(len(df_preview))
-        self.preview_table.setColumnCount(len(df_preview.columns))
-        
-        # МАПА НАЗВ БЕЗ "Старий індекс"
-        field_names_map = {
-            'client_id': 'ID Клієнта',
-            'name': 'ПІБ',
-            'region': 'Область',
-            'district': 'Район',
-            'city': 'Місто',
-            'street': 'Вулиця',
-            'building': 'Будинок',
-            'index': 'Індекс'
-        }
-        header_labels = [field_names_map.get(col, col) for col in df_preview.columns]
-        self.preview_table.setHorizontalHeaderLabels(header_labels)
-        
-        for i in range(len(df_preview)):
-            for j, col in enumerate(df_preview.columns):
-                value = df_preview.iloc[i, j]
-                item = QTableWidgetItem(str(value))
-                self.preview_table.setItem(i, j, item)
-        
-        self.preview_table.resizeColumnsToContents()
+        self._save_geometry()
+        self.logger.info(f"Column mapping встановлено: {mapping}")
+        super().accept()
     
-    def load_scheme_list(self):
-        """Завантажує список схем"""
-        schemes = ColumnMappingHandler.list_mappings()
-        self.scheme_combo.clear()
-        self.scheme_combo.addItems(schemes)
+    def reject(self):
+        """Зберігаємо розміри при скасуванні"""
+        self._save_geometry()
+        super().reject()
     
-    def load_scheme(self):
-        """Завантажує схему"""
-        scheme_name = self.scheme_combo.currentText()
-        if not scheme_name:
-            return
+    def _restore_geometry(self):
+        """Відновлює розміри через QSettings"""
+        self.settings.beginGroup('ColumnMappingDialog')
         
-        mapping = ColumnMappingHandler.load_mapping(scheme_name)
-        if not mapping:
-            QMessageBox.warning(self, "Помилка", "Не вдалося завантажити схему")
-            return
+        x = self.settings.value('x', 100, type=int)
+        y = self.settings.value('y', 100, type=int)
+        width = self.settings.value('width', 700, type=int)
+        height = self.settings.value('height', 600, type=int)
         
-        # Застосовуємо mapping
-        self.current_mapping = mapping
-        self.normalize_mapping()
+        self.setGeometry(x, y, width, height)
         
-        # Оновлюємо UI
-        for field_id, list_widget in self.combos.items():
-            # Скидаємо всі чекбокси
-            for i in range(list_widget.count()):
-                list_widget.item(i).setCheckState(Qt.Unchecked)
-            
-            # Ставимо галочки
-            if field_id in self.current_mapping:
-                for col_idx in self.current_mapping[field_id]:
-                    if 0 <= col_idx < list_widget.count():
-                        list_widget.item(col_idx).setCheckState(Qt.Checked)
+        # Розміри splitter
+        splitter_sizes = self.settings.value('splitter_sizes', [400, 150])
+        if splitter_sizes and self.main_splitter:
+            if isinstance(splitter_sizes, list):
+                splitter_sizes = [int(s) for s in splitter_sizes]
+                self.main_splitter.setSizes(splitter_sizes)
         
-        self.update_preview()
-        QMessageBox.information(self, "Успіх", f"Схему '{scheme_name}' завантажено!")
+        self.settings.endGroup()
     
-    def save_scheme(self):
-        """Зберігає схему"""
+    def _save_geometry(self):
+        """Зберігає розміри через QSettings"""
+        self.settings.beginGroup('ColumnMappingDialog')
+        
+        geometry = self.geometry()
+        self.settings.setValue('x', geometry.x())
+        self.settings.setValue('y', geometry.y())
+        self.settings.setValue('width', geometry.width())
+        self.settings.setValue('height', geometry.height())
+        
+        if self.main_splitter:
+            sizes = self.main_splitter.sizes()
+            self.settings.setValue('splitter_sizes', sizes)
+        
+        self.settings.endGroup()
+    
+    def save_mapping_scheme(self):
+        """Зберігає схему mapping"""
+        from PyQt5.QtWidgets import QInputDialog
+        
         name, ok = QInputDialog.getText(
-            self, 
-            "Зберегти схему", 
+            self,
+            "Зберегти схему",
             "Введіть назву схеми:"
         )
         
-        if not ok or not name:
+        if ok and name:
+            mapping = self.get_mapping()
+            success = ColumnMappingHandler.save_mapping(name, mapping)
+            
+            if success:
+                QMessageBox.information(self, "Успіх", f"Схему '{name}' збережено!")
+            else:
+                QMessageBox.critical(self, "Помилка", "Не вдалося зберегти схему")
+    
+    def load_mapping_scheme(self):
+        """Завантажує схему mapping"""
+        from PyQt5.QtWidgets import QInputDialog
+        
+        schemes = ColumnMappingHandler.list_mappings()
+        
+        if not schemes:
+            QMessageBox.information(self, "Інформація", "Немає збережених схем")
             return
         
-        # Отримуємо поточне mapping
-        mapping = self.get_mapping()
+        name, ok = QInputDialog.getItem(
+            self,
+            "Завантажити схему",
+            "Оберіть схему:",
+            schemes,
+            0,
+            False
+        )
         
-        # Зберігаємо
-        if ColumnMappingHandler.save_mapping(name, mapping):
-            self.load_scheme_list()
-            idx = self.scheme_combo.findText(name)
-            if idx >= 0:
-                self.scheme_combo.setCurrentIndex(idx)
-            QMessageBox.information(self, "Успіх", f"Схему '{name}' збережено!")
-        else:
-            QMessageBox.warning(self, "Помилка", "Не вдалося зберегти схему")
+        if ok and name:
+            mapping = ColumnMappingHandler.load_mapping(name)
+            
+            if mapping:
+                for field_id, column_indices in mapping.items():
+                    if field_id in self.combo_boxes:
+                        column_names = [str(self.excel_columns[idx]) for idx in column_indices 
+                                      if idx < len(self.excel_columns)]
+                        self.combo_boxes[field_id].set_checked_items(column_names)
+                
+                QMessageBox.information(self, "Успіх", f"Схему '{name}' завантажено!")
+            else:
+                QMessageBox.critical(self, "Помилка", "Не вдалося завантажити схему")
+    
+    def _button_style(self, bg_color="#2196F3", size="11px"):
+        """Стиль кнопки"""
+        color = QColor(bg_color)
+        h, s, v, a = color.getHsv()
+        hover_v = max(0, int(v * 0.8))
+        hover_color = QColor()
+        hover_color.setHsv(h, s, hover_v, a)
+        
+        return f"""
+            QPushButton {{
+                background-color: {bg_color};
+                color: white;
+                border: none;
+                border-radius: 3px;
+                padding: 6px 12px;
+                font-size: {size};
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {hover_color.name()};
+            }}
+            QPushButton:pressed {{
+                background-color: {bg_color};
+                padding-top: 7px;
+                padding-bottom: 5px;
+            }}
+        """

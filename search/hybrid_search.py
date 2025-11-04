@@ -1,6 +1,7 @@
 """
 Гібридний пошук адрес
 Комбінує Jaro-Winkler, приголосні, вагову систему
+ВИПРАВЛЕНА ВЕРСІЯ - не завантажує дані при ініціалізації
 """
 from typing import List, Dict, Tuple
 from models.address import Address
@@ -15,16 +16,32 @@ import config
 class HybridSearch:
     """Гібридний пошук з ваговою системою"""
     
-    def __init__(self):
+    def __init__(self, lazy_load: bool = True):
+        """
+        Ініціалізація пошуку
+        
+        Args:
+            lazy_load: Якщо True - НЕ завантажує дані одразу
+        """
         self.normalizer = TextNormalizer()
         self.similarity = SimilarityCalculator()
         self.loader = MagistralLoader()
         self.logger = Logger()
         
-        # Завантажуємо magistral
-        self.logger.info("Завантаження magistral.csv...")
-        self.magistral_records = self.loader.load()
-        self.logger.info(f"Завантажено {len(self.magistral_records)} записів")
+        self.magistral_records = []
+        self._is_loaded = False
+        
+        # Завантажуємо тільки якщо НЕ lazy
+        if not lazy_load:
+            self._ensure_loaded()
+    
+    def _ensure_loaded(self):
+        """Завантажує дані якщо ще не завантажені"""
+        if not self._is_loaded:
+            self.logger.info("Завантаження magistral.csv...")
+            self.magistral_records = self.loader.load()
+            self._is_loaded = True
+            self.logger.info(f"Завантажено {len(self.magistral_records)} записів")
     
     def search(self, address: Address, max_results: int = None) -> List[Dict]:
         """
@@ -37,6 +54,13 @@ class HybridSearch:
         Returns:
             Список результатів з score
         """
+        # Перевіряємо що дані завантажені
+        self._ensure_loaded()
+        
+        if not self.magistral_records:
+            self.logger.error("Magistral records порожні!")
+            return []
+        
         if max_results is None:
             max_results = config.MAX_SEARCH_RESULTS
         
@@ -167,8 +191,6 @@ class HybridSearch:
             total_score += 0.05
         
         return min(total_score, 1.0)  # Обмежуємо до 100%
-
-
     
     def _create_result(self, record: MagistralRecord, score: float) -> Dict:
         """Створює результат з усією інформацією"""
@@ -176,10 +198,10 @@ class HybridSearch:
             'region': record.region,
             'district': record.new_district or record.old_district,
             'city': record.city,
-            'city_ua': record.city,  # ⬅️ ДОДАНО
+            'city_ua': record.city,
             'street': record.street,
-            'street_ua': record.street,  # ⬅️ ДОДАНО
-            'building': record.buildings,  # ⬅️ ДОДАНО (для відображення)
+            'street_ua': record.street,
+            'building': record.buildings,
             'buildings': record.buildings,
             'index': record.city_index,
             'score': score,
@@ -191,6 +213,7 @@ class HybridSearch:
     
     def get_statistics(self) -> Dict:
         """Повертає статистику системи"""
+        self._ensure_loaded()
         return {
             'total_records': len(self.magistral_records),
             'indexed_cities': len(self.loader.index_by_city_prefix),
