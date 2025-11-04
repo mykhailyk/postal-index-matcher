@@ -97,12 +97,25 @@ class MainWindow(QMainWindow):
         self._setup_shortcuts()
         
         # Кеш вже завантажений в main.py
+        self.logger.info("=== ПОЧАТОК ЗАВАНТАЖЕННЯ UKRPOSHTA CACHE ===")
+
+        # ВИКЛИКАЄМО _ensure_loaded() щоб завантажити дані
+        self.search_manager.search_engine._ensure_loaded()
+
         records = self.search_manager.get_magistral_records()
+        self.logger.info(f"Отримано {len(records) if records else 0} записів")
+
         if records and self.address_panel:
+            self.logger.info(f"Передаємо {len(records):,} записів в AddressSelectorPanel...")
             print(f"\n📦 Передаємо {len(records):,} записів в AddressSelectorPanel...")
             self.address_panel.set_magistral_cache(records)
+            self.logger.info("AddressSelectorPanel ініціалізовано")
             print("✅ AddressSelectorPanel ініціалізовано\n")
+        else:
+            self.logger.warning(f"НЕ ПЕРЕДАНО: records={len(records) if records else 0}, address_panel={self.address_panel is not None}")
+
         self._cache_loaded = True
+        self.logger.info("=== КІНЕЦЬ ЗАВАНТАЖЕННЯ ===")
         
         self.logger.info("GUI ініціалізовано")
     

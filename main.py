@@ -1,5 +1,5 @@
 """
-PrintTo Address Matcher v2.1
+PrintTo Address Matcher v2.2
 Головний файл програми
 """
 
