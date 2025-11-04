@@ -1,5 +1,6 @@
 """
-Панель підбору адреси - фінальна версія з popup автокомплітом
+Панель підбору адреси - ВИПРАВЛЕНА ВЕРСІЯ
+ВИПРАВЛЕНО: кеш ukrposhta_v2.pkl.xz тепер створюється правильно
 """
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
@@ -172,10 +173,10 @@ class AddressSelectorPanel(QWidget):
         self.cascade_city_input.textChanged.connect(self.on_cascade_city_typed)
         form.addWidget(self.cascade_city_input)
         
-        # POPUP LIST (плаваючий, НЕ блокує введення)
+        # POPUP LIST
         self.cascade_city_list = QListWidget(self)
-        self.cascade_city_list.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)  # ⬅️ ЗМІНЕНО
-        self.cascade_city_list.setAttribute(Qt.WA_ShowWithoutActivating)  # ⬅️ ДОДАНО (не забирає фокус)
+        self.cascade_city_list.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.cascade_city_list.setAttribute(Qt.WA_ShowWithoutActivating)
         self.cascade_city_list.setMinimumHeight(200)
         self.cascade_city_list.setMaximumHeight(300)
         self.cascade_city_list.setWordWrap(True)
@@ -212,10 +213,10 @@ class AddressSelectorPanel(QWidget):
         self.cascade_street_input.setEnabled(False)
         form.addWidget(self.cascade_street_input)
         
-        # POPUP LIST (плаваючий, НЕ блокує введення)
+        # POPUP LIST
         self.cascade_street_list = QListWidget(self)
-        self.cascade_street_list.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)  # ⬅️ ЗМІНЕНО
-        self.cascade_street_list.setAttribute(Qt.WA_ShowWithoutActivating)  # ⬅️ ДОДАНО
+        self.cascade_street_list.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.cascade_street_list.setAttribute(Qt.WA_ShowWithoutActivating)
         self.cascade_street_list.setMinimumHeight(200)
         self.cascade_street_list.setMaximumHeight(300)
         self.cascade_street_list.setWordWrap(True)
@@ -251,7 +252,6 @@ class AddressSelectorPanel(QWidget):
         self.cascade_building_combo.setMaxVisibleItems(10)
         self.cascade_building_combo.view().setWordWrap(True)
         self.cascade_building_combo.view().setTextElideMode(Qt.ElideNone)
-        # Встановити мінімальну ширину для перенесення
         self.cascade_building_combo.view().setMinimumWidth(250)
         self.cascade_building_combo.hide()
         form.addWidget(self.cascade_building_combo)
@@ -285,18 +285,21 @@ class AddressSelectorPanel(QWidget):
         return panel
     
     def set_magistral_cache(self, magistral_records):
-        """Встановлює кеш magistral"""
+        """Встановлює кеш magistral - ВИПРАВЛЕНА ВЕРСІЯ"""
         self.magistral_cache = magistral_records
         
-        # Спочатку пробуємо завантажити з кешу
-        if self.ukr_index.load():
-            print("✅ UkrposhtaIndex завантажено з кешу")
-            return
+        print("🔄 Ініціалізація індексу Укрпошти...")
         
-        # Якщо кешу немає - будуємо (це довго ~2 хв)
-        print("⏳ Побудова індексу Укрпошти (це займе ~2 хв)...")
-        self.ukr_index.build(magistral_records)
-        print("✅ Індекс побудовано")
+        # Спочатку пробуємо завантажити з кешу
+        cache_loaded = self.ukr_index.load()
+        
+        if cache_loaded:
+            print("✅ UkrposhtaIndex завантажено з кешу")
+        else:
+            # Якщо кешу немає - будуємо (це довго ~2 хв)
+            print("⏳ Побудова індексу Укрпошти (це займе ~2 хв)...")
+            self.ukr_index.build(magistral_records)
+            print("✅ Індекс побудовано і збережено")
         
         # Для лівої панелі
         cities_with_districts = {}
@@ -335,7 +338,6 @@ class AddressSelectorPanel(QWidget):
     
     def on_cascade_city_typed(self, text):
         """Введення міста з POPUP"""
-        # ОЧИЩЕННЯ
         self.cascade_street_input.clear()
         self.cascade_street_input.setEnabled(False)
         self.cascade_street_list.hide()
@@ -355,7 +357,6 @@ class AddressSelectorPanel(QWidget):
             for city in matching:
                 self.cascade_city_list.addItem(city)
             
-            # ПОЗИЦІОНУЄМО popup під полем
             pos = self.cascade_city_input.mapToGlobal(self.cascade_city_input.rect().bottomLeft())
             self.cascade_city_list.move(pos)
             self.cascade_city_list.setFixedWidth(self.cascade_city_input.width())
@@ -365,17 +366,15 @@ class AddressSelectorPanel(QWidget):
             self.cascade_city_list.hide()
     
     def on_cascade_city_clicked(self, item):
-        """Клік по місту - ПЕРЕХІД НА ВУЛИЦЮ"""
+        """Клік по місту"""
         city_full = item.text()
         
         self.cascade_city_input.setText(city_full)
         self.cascade_city_list.hide()
         
-        # Отримуємо вулиці
         streets = self.ukr_index.get_streets(city_full)
         self.all_streets_cache = streets
         
-        # Активуємо поле вулиці
         self.cascade_street_input.setEnabled(True)
         self.cascade_street_input.clear()
         
@@ -383,16 +382,13 @@ class AddressSelectorPanel(QWidget):
         self.cascade_building_combo.hide()
         self.cascade_index_input.clear()
         
-        # ПЕРЕХІД на вулицю + показ перших 10 вулиць
         self.cascade_street_input.setFocus()
         
-        # Показуємо перші 10 вулиць
         self.cascade_street_list.clear()
         for street in streets[:10]:
             self.cascade_street_list.addItem(street)
         
         if streets:
-            # Позиціонуємо popup під полем вулиці
             pos = self.cascade_street_input.mapToGlobal(self.cascade_street_input.rect().bottomLeft())
             self.cascade_street_list.move(pos)
             self.cascade_street_list.setFixedWidth(self.cascade_street_input.width())
@@ -415,7 +411,6 @@ class AddressSelectorPanel(QWidget):
             for street in filtered:
                 self.cascade_street_list.addItem(street)
             
-            # ПОЗИЦІОНУЄМО popup під полем
             pos = self.cascade_street_input.mapToGlobal(self.cascade_street_input.rect().bottomLeft())
             self.cascade_street_list.move(pos)
             self.cascade_street_list.setFixedWidth(self.cascade_street_input.width())
@@ -433,21 +428,17 @@ class AddressSelectorPanel(QWidget):
         
         city_full = self.cascade_city_input.text()
         
-        
         buildings_map = self.ukr_index.get_buildings(city_full, street_text)
                 
         if len(buildings_map) == 0:
-            # Немає індексів
             self.cascade_index_input.clear()
             self.cascade_building_combo.hide()
         elif len(buildings_map) == 1:
-            # Один індекс
             idx = list(buildings_map.keys())[0]
             self.cascade_index_input.setText(idx)
             self.cascade_building_combo.hide()
             print(f"✅ Встановлено індекс: {idx}")
         else:
-            # Декілька індексів
             self.cascade_building_combo.clear()
             self.cascade_building_combo.addItem("-- Оберіть будинок --")
             
@@ -460,7 +451,6 @@ class AddressSelectorPanel(QWidget):
             self.cascade_building_combo.show()
             self.cascade_building_combo.setFocus()
             
-            # Встановлюємо перший індекс
             first_idx = min(buildings_map.keys())
             self.cascade_index_input.setText(first_idx)
             print(f"📋 Показано випадашку з {len(buildings_map)} варіантами")
@@ -481,7 +471,6 @@ class AddressSelectorPanel(QWidget):
         if index and len(index) == 5:
             self.index_double_clicked.emit(index)
             
-            # ⬇️ ВЖЕ Є (перевір чи працює):
             self.cascade_city_input.clear()
             self.cascade_street_input.clear()
             self.cascade_street_input.setEnabled(False)
@@ -489,13 +478,11 @@ class AddressSelectorPanel(QWidget):
             self.cascade_building_combo.hide()
             self.cascade_index_input.clear()
             
-            # Ховаємо popup
             if hasattr(self, 'cascade_city_list'):
                 self.cascade_city_list.hide()
             if hasattr(self, 'cascade_street_list'):
                 self.cascade_street_list.hide()
 
-    
     # ==================== РУЧНА ФОРМА ====================
     
     def on_city_changed(self):
@@ -711,4 +698,4 @@ class AddressSelectorPanel(QWidget):
         self.cascade_index_input.setStyleSheet(
             f"padding: 10px; font-size: {size + 8}px; font-weight: bold; "
             "border: 2px solid #FF9800; border-radius: 5px; background-color: #FFF3E0;"
-        )
+        )c
