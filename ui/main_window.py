@@ -427,11 +427,10 @@ class MainWindow(QMainWindow):
         """
         Обробник кліку по заголовку колонки
         """
-        # Отримуємо DataFrame з правильного місця
-        df = self.file_manager.excel_handler.df
+        from utils.logger import Logger
         
         # Перевіряємо чи є дані
-        if df is None or df.empty:
+        if self.df is None or self.df.empty:
             return
         
         # Визначаємо порядок сортування
@@ -447,28 +446,28 @@ class MainWindow(QMainWindow):
             self.current_sort_order = 'asc'
         
         # Отримуємо назву колонки
-        column_name = df.columns[logical_index]
+        column_name = self.df.columns[logical_index]
         
         # Виконуємо сортування
         self.sort_dataframe(column_name, self.current_sort_order)
         
         # Оновлюємо відображення таблиці
-        self._display_table()
+        self.load_data_to_table()
         
         # Оновлюємо візуальну підказку
         self.update_header_sort_indicator(logical_index, self.current_sort_order)
         
         # Логуємо
-        self.logger.info(f"Сортування: '{column_name}' ({self.current_sort_order})")
+        logger = Logger()
+        logger.info(f"Сортування: '{column_name}' ({self.current_sort_order})")
         
     def sort_dataframe(self, column_name, order='asc'):
         """
         Сортує DataFrame по заданій колонці
         """
-        # Отримуємо DataFrame
-        df = self.file_manager.excel_handler.df
+        from utils.logger import Logger
         
-        if df is None or column_name not in df.columns:
+        if self.df is None or column_name not in self.df.columns:
             return
         
         # Визначаємо напрямок
@@ -476,27 +475,21 @@ class MainWindow(QMainWindow):
         
         try:
             # Заповнюємо NaN пустими рядками
-            df[column_name] = df[column_name].fillna('')
+            self.df[column_name] = self.df[column_name].fillna('')
             
             # Сортуємо
-            df_sorted = df.sort_values(
+            self.df = self.df.sort_values(
                 by=column_name,
                 ascending=ascending,
                 na_position='last'
             )
             
             # Скидаємо індекс
-            df_sorted = df_sorted.reset_index(drop=True)
-            
-            # ВАЖЛИВО: Зберігаємо відсортований DataFrame назад
-            self.file_manager.excel_handler.df = df_sorted
-            
-            self.logger.info(f"✓ Відсортовано {len(df_sorted)} рядків")
+            self.df = self.df.reset_index(drop=True)
             
         except Exception as e:
-            self.logger.error(f"Помилка сортування: {e}")
-            import traceback
-            self.logger.error(traceback.format_exc())
+            logger = Logger()
+            logger.error(f"Помилка сортування: {e}")
             
     def update_header_sort_indicator(self, column_index, order):
         """
