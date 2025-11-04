@@ -301,7 +301,7 @@ class AddressSelectorPanel(QWidget):
             self.ukr_index.build(magistral_records)
             print("✅ Індекс побудовано і збережено")
         
-        # Для лівої панелі
+        # Для лівої панелі - ЦЕЙ КОД МАЄ ВИКОНУВАТИСЯ ЗАВЖДИ!
         cities_with_districts = {}
         for record in magistral_records:
             if hasattr(record, 'city') and record.city:
@@ -698,4 +698,4 @@ class AddressSelectorPanel(QWidget):
         self.cascade_index_input.setStyleSheet(
             f"padding: 10px; font-size: {size + 8}px; font-weight: bold; "
             "border: 2px solid #FF9800; border-radius: 5px; background-color: #FFF3E0;"
-        )c
+        )
