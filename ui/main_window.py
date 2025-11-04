@@ -97,6 +97,11 @@ class MainWindow(QMainWindow):
         self._setup_shortcuts()
         
         # Кеш вже завантажений в main.py
+        records = self.search_manager.get_magistral_records()
+        if records and self.address_panel:
+            print(f"\n📦 Передаємо {len(records):,} записів в AddressSelectorPanel...")
+            self.address_panel.set_magistral_cache(records)
+            print("✅ AddressSelectorPanel ініціалізовано\n")
         self._cache_loaded = True
         
         self.logger.info("GUI ініціалізовано")
