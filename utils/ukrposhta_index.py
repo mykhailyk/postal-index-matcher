@@ -3,7 +3,6 @@
 """
 import os
 import pickle
-import lzma
 from collections import defaultdict
 import config
 
@@ -91,64 +90,57 @@ class UkrposhtaIndex:
         self.save()
     
     def save(self):
-        """Зберігає індекс у файл з компресією"""
-        os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
-        
-        cache_xz = self.cache_file + '.xz'
-        
-        data = {
-            'city_by_prefix': self.city_by_prefix,
-            'city_data': self.city_data,
-            'magistral_cache': self.magistral_cache
-        }
-        
-        with lzma.open(cache_xz, 'wb', preset=6) as f:
-            pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
-        
-        print(f"💾 Індекс Укрпошти збережено в {cache_xz}")
+            """Зберігає індекс у файл БЕЗ компресії (швидше!)"""
+            os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
+            
+            data = {
+                'city_by_prefix': self.city_by_prefix,
+                'city_data': self.city_data
+            }
+            
+            # Зберігаємо БЕЗ компресії - швидше в 30+ разів
+            with open(self.cache_file, 'wb') as f:
+                pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+            
+            print(f"💾 Індекс Укрпошти збережено в {self.cache_file}")
     
     def load(self):
-        """Завантажує індекс з файлу з компресією"""
-        cache_xz = self.cache_file + '.xz'
-        
-        # Перевіряємо стиснутий файл
-        if not os.path.exists(cache_xz):
-            # Якщо немає - шукаємо старий
-            if os.path.exists(self.cache_file):
-                print("⚠️ Знайдено старий кеш без компресії")
-                # Видаляємо старий кеш
+            """Завантажує індекс з файлу БЕЗ компресії (швидше!)"""
+            
+            # Видаляємо старий .xz файл якщо є
+            cache_xz = self.cache_file + '.xz'
+            if os.path.exists(cache_xz):
                 try:
-                    os.remove(self.cache_file)
-                    print("✓ Старий кеш видалено, буде створено новий")
+                    os.remove(cache_xz)
+                    print("✓ Видалено старий .xz кеш")
                 except:
                     pass
-            print("⚠️ Кеш індексу Укрпошти не знайдено")
-            return False
-        
-        try:
-            with lzma.open(cache_xz, 'rb') as f:
-                data = pickle.load(f)
             
-            self.city_by_prefix = data['city_by_prefix']
-            self.city_data = data['city_data']
-            
-            # Завантажуємо magistral_cache
-            if 'magistral_cache' in data:
-                self.magistral_cache = data['magistral_cache']
-                print(f"✅ Індекс Укрпошти завантажено з кешу ({len(self.city_data)} міст, {len(self.magistral_cache)} записів)")
-            else:
-                print(f"⚠️ Кеш без magistral - потрібен rebuild")
+            # Перевіряємо новий файл
+            if not os.path.exists(self.cache_file):
+                print("⚠️ Кеш індексу Укрпошти не знайдено")
                 return False
             
-            return True
-        except Exception as e:
-            print(f"❌ Помилка завантаження кешу: {e}")
-            # Видаляємо пошкоджений кеш
             try:
-                os.remove(cache_xz)
-            except:
-                pass
-            return False
+                with open(self.cache_file, 'rb') as f:
+                    data = pickle.load(f)
+                
+                self.city_by_prefix = data['city_by_prefix']
+                self.city_data = data['city_data']
+                
+                # magistral_cache буде встановлено ззовні через set_magistral_cache()
+                print(f"✅ Індекс Укрпошти завантажено з кешу ({len(self.city_data)} міст)")
+                
+                return True
+                
+            except Exception as e:
+                print(f"❌ Помилка завантаження кешу: {e}")
+                # Видаляємо пошкоджений кеш
+                try:
+                    os.remove(self.cache_file)
+                except:
+                    pass
+                return False
     
     def search_cities(self, query):
         """Шукає міста - МІСТА ПЕРШИМИ"""
