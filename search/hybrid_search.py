@@ -156,8 +156,19 @@ class HybridSearch:
         }
     
     def _find_auto_result(self, address: Address, results: List[Dict]) -> Optional[Dict]:
-
-        """Визначає чи можлива автопідстановка"""
+        """
+        Визначає чи можлива автопідстановка
+        
+        ЖОРСТКІ критерії:
+        1. ТІЛЬКИ ОДИН результат з ≥98%
+        2. Індекс співпадає з запитом (якщо є)
+        3. Будинок ТОЧНО співпадає (не часткове!)
+        4. Місто ≥95%
+        5. Вулиця ≥90%
+        
+        Returns:
+            Dict з результатом або None
+        """
         if not results:
             return None
         
@@ -166,20 +177,10 @@ class HybridSearch:
         
         # Має бути ТІЛЬКИ ОДИН результат з 98%+
         if len(perfect_results) != 1:
+            self.logger.debug(f"Автопідстановка неможлива: знайдено {len(perfect_results)} результатів ≥98%")
             return None
         
         result = perfect_results[0]
-        
-        # ✅ НОВА ПЕРЕВІРКА: область має збігатися!
-        if address.region and address.region.strip():
-            query_region = address.region.strip().lower()
-            result_region = result.get('region', '').lower()
-            
-            # Перевіряємо схожість регіонів
-            region_sim = self.similarity.jaro_winkler_similarity(query_region, result_region)
-            if region_sim < 0.85:
-                self.logger.debug(f"Область не збігається: {query_region} vs {result_region}")
-                return None
         
         # Перевіряємо індекс якщо заданий користувачем
         if address.index and address.index.strip():
@@ -246,31 +247,25 @@ class HybridSearch:
     
     def _calculate_score_strict(self, address: Address, record: MagistralRecord) -> float:
         """
-        ЖОРСТКИЙ розрахунок score з ваговою системою
+        ЖОРСТКИЙ розрахунок score для високої точності
+        
+        Нова вагова система:
+        - Місто: 35%
+        - Вулиця: 35%
+        - Будинок: 25% (підвищено!)
+        - Індекс: 5%
+        
+        З жорсткими фільтрами та штрафами
         """
         total_score = 0.0
         
         # Нормалізуємо запит
         query_city = self.normalizer.normalize_city(address.city)
         query_street = self.normalizer.normalize_street(address.street)
-        query_region = self.normalizer.normalize_region(address.region)
         query_building = self.normalizer.normalize_text(address.building) if address.building else ""
+        query_index = address.index.strip().lstrip('0') if address.index else ""
         
-        # ============ 1. ОБЛАСТЬ (10%) - ПЕРЕВІРКА ============
-        region_match = False
-        if query_region and record.normalized_region:
-            region_similarity = self.similarity.jaro_winkler_similarity(
-                query_region, 
-                record.normalized_region
-            )
-            region_match = region_similarity >= 0.85
-            total_score += region_similarity * 0.10
-        
-        # Якщо область НЕ ЗБІГАЄТЬСЯ - ВЕЛИКИЙ ШТРАФ (-30%)
-        if query_region and not region_match:
-            total_score -= 0.30
-        
-        # ============ 2. МІСТО (35%) - ЖОРСТКИЙ ФІЛЬТР ============
+        # ============ 1. МІСТО (35%) - ЖОРСТКИЙ ФІЛЬТР ============
         city_similarity = 0.0
         if query_city and record.normalized_city:
             city_similarity = self.similarity.jaro_winkler_similarity(
@@ -280,69 +275,71 @@ class HybridSearch:
             
             # ЖОРСТКИЙ ФІЛЬТР: місто має бути дуже схожим
             if city_similarity < 0.85:
+                # Якщо місто не схоже - максимум 17% score
                 return city_similarity * 0.2
             
             total_score += city_similarity * 0.35
         
-        # ============ 3. ВУЛИЦЯ (35%) - СПЕЦІАЛЬНА ЛОГІКА ============
+        # ============ 2. ВУЛИЦЯ (35%) - ЖОРСТКИЙ ФІЛЬТР ============
         street_similarity = 0.0
-        street_found = False
-        
         if query_street and record.normalized_street:
             street_similarity = self.similarity.jaro_winkler_similarity(
                 query_street, 
                 record.normalized_street
             )
-            street_found = street_similarity >= 0.75
             
-            if street_found:
-                # Вулиця ЗНАЙДЕНА - звичайна вага
-                total_score += street_similarity * 0.35
+            # ЖОРСТКИЙ ФІЛЬТР: вулиця має бути досить схожою
+            if street_similarity < 0.75:
+                # Якщо вулиця не схожа - великий штраф
+                total_score += street_similarity * 0.10  # Замість 35% тільки 10%
             else:
-                # Вулиця НЕ знайдена - ШТРАФ
-                total_score += street_similarity * 0.10
+                total_score += street_similarity * 0.35
         
-        # ============ 4. СПЕЦІАЛЬНИЙ РЕЖИМ: Вулиця не знайдена для НЕ-КИЇВА ============
-        if query_city and not street_found:
-            # Перевіряємо чи Київ
-            is_kyiv = "київ" in query_city.lower()
-            
-            if not is_kyiv and city_similarity >= 0.85:
-                # НЕ-КИЇВ і місто знайдено, але вулиця НІ
-                # Використовуємо НОВИЙ РЕЖИМ: тільки місто + область (50/50)
-                total_score = 0.0
-                total_score += city_similarity * 0.50
-                
-                if region_match:
-                    total_score += 0.50
-                else:
-                    total_score += 0.25  # Штраф за неправильну область
-                
-                # Позначаємо спеціальний режим
-                record.special_mode = True
-        else:
-            record.special_mode = False
-        
-        # ============ 5. БУДИНОК (15%) - ТІЛЬКИ якщо вулиця знайдена ============
-        if street_found and query_building and record.buildings:
-            buildings_list = [b.strip().upper().replace("-", "").replace(" ", "") 
-                             for b in record.buildings.split(',')]
+        # ============ 3. БУДИНОК (25%) - КРИТИЧНО ВАЖЛИВО! ============
+        building_bonus = 0.0
+        if query_building and record.buildings:
+            # Очищаємо будинок від дефісів та пробілів
+            buildings_list = [
+                b.strip().upper().replace("-", "").replace(" ", "") 
+                for b in record.buildings.split(',')
+            ]
             query_building_clean = query_building.upper().replace("-", "").replace(" ", "")
             
             if query_building_clean in buildings_list:
-                total_score += 0.15
+                # ТОЧНЕ СПІВПАДІННЯ - повний бонус
+                building_bonus = 0.25
+                total_score += building_bonus
             else:
+                # Часткове співпадіння (наприклад, "27" в "27А")
+                found_partial = False
                 for building in buildings_list:
                     if query_building_clean in building or building in query_building_clean:
-                        total_score += 0.10
+                        # Часткове співпадіння - зменшений бонус
+                        building_bonus = 0.10
+                        total_score += building_bonus
+                        found_partial = True
                         break
+                
+                # Якщо будинок взагалі не знайдено - ШТРАФ
+                if not found_partial:
+                    total_score -= 0.15  # Штраф 15%
         
-        # ============ БОНУС ============
-        if city_similarity > 0.95 and street_similarity > 0.80:
-            total_score += 0.05
+        # ============ 4. ІНДЕКС (5%) ============
+        if query_index and record.city_index:
+            record_index = record.city_index.strip().lstrip('0')
+            if query_index == record_index:
+                total_score += 0.05
+            else:
+                # Індекс не співпадає - невеликий штраф
+                total_score -= 0.02
         
+        # ============ БОНУС ЗА ІДЕАЛЬНЕ СПІВПАДІННЯ ============
+        # Якщо все майже ідеально - додатковий бонус
+        if city_similarity >= 0.98 and street_similarity >= 0.95 and building_bonus >= 0.25:
+            total_score += 0.10  # Бонус +10%
+        
+        # Обмежуємо score від 0 до 1
         return max(0.0, min(total_score, 1.0))
-
     
     def _create_result(self, record: MagistralRecord, score: float) -> Dict:
         """Створює результат з усією інформацією"""
