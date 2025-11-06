@@ -1,19 +1,19 @@
 """
-Панель результатів пошуку - ОСТАТОЧНА ВЕРСІЯ
+Панель результатів пошуку - ВЕРСІЯ 3.0 з автопідстановкою
 """
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QListWidget, QListWidgetItem, QSpinBox, QPushButton
 )
 from PyQt5.QtCore import pyqtSignal, Qt
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QColor
 
 
 class ResultsPanel(QWidget):
-    """Панель відображення результатів пошуку"""
+    """Панель відображення результатів пошуку з підтримкою автопідстановки"""
     
     index_selected = pyqtSignal(str)
-    search_requested = pyqtSignal()  # ⬅️ ДОДАНО
+    search_requested = pyqtSignal()
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -35,7 +35,7 @@ class ResultsPanel(QWidget):
         # Контроль кількості результатів та налаштування
         control_layout = QHBoxLayout()
 
-        # ⬇️ КНОПКА ЗНАЙТИ
+        # Кнопка ЗНАЙТИ
         self.search_btn = QPushButton("🔍 Знайти (Enter)")
         self.search_btn.setStyleSheet("padding: 5px 10px; font-size: 11px;")
         self.search_btn.clicked.connect(self.on_search_clicked)
@@ -141,8 +141,14 @@ class ResultsPanel(QWidget):
         """Обробка кліку на Знайти"""
         self.search_requested.emit()
     
-    def show_results(self, results, building_number=""):
-        """Відображає результати пошуку"""
+    def display_results(self, results, highlight_first: bool = False):
+        """
+        НОВИЙ МЕТОД - відображає результати з можливістю виділення автопідстановки
+        
+        Args:
+            results: Список результатів
+            highlight_first: Виділити перший результат як автопідстановку
+        """
         self.current_results = results
         self.results_list.clear()
         
@@ -165,7 +171,9 @@ class ResultsPanel(QWidget):
             not_working = result.get('not_working', '')
             
             # Індикатор точності
-            if confidence >= 90:
+            if i == 0 and highlight_first:
+                icon = "✅"  # Автопідстановка
+            elif confidence >= 90:
                 icon = "🟢"
             elif confidence >= 70:
                 icon = "🟡"
@@ -197,9 +205,7 @@ class ResultsPanel(QWidget):
             
             # РЯДОК 3: Індекс + інформація про роботу
             if not_working and 'Тимчасово не функціонує' in not_working:
-                # Відділення не працює
                 text += f"\n* (не обслуговується) ⚠️"
-                # Додаємо текст куди переадресовано
                 if ',' in not_working:
                     redirect_text = not_working.split(',', 1)[1].strip()
                     if redirect_text:
@@ -207,8 +213,11 @@ class ResultsPanel(QWidget):
                 else:
                     text += f"\n{not_working}"
             else:
-                # Відділення працює
                 text += f"\n{index} ({confidence}%)"
+            
+            # Додаємо мітку автопідстановки
+            if i == 0 and highlight_first:
+                text = "🎯 АВТОПІДСТАНОВКА (≥98%)\n" + text
             
             item = QListWidgetItem(text)
             item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
@@ -219,7 +228,19 @@ class ResultsPanel(QWidget):
             font.setPointSize(self.font_size)
             item.setFont(font)
             
+            # Виділяємо автопідстановку зеленим
+            if i == 0 and highlight_first:
+                item.setBackground(QColor(200, 255, 200))  # Світло-зелений фон
+                item.setForeground(QColor(0, 100, 0))  # Темно-зелений текст
+            
             self.results_list.addItem(item)
+    
+    def show_results(self, results, building_number="", highlight_first: bool = False):
+        """
+        LEGACY метод - для зворотної сумісності
+        Викликає новий метод display_results
+        """
+        self.display_results(results, highlight_first=highlight_first)
     
     def on_result_double_clicked(self, item):
         """Обробка подвійного кліку на результат"""
@@ -244,6 +265,6 @@ class ResultsPanel(QWidget):
         return None
     
     def clear(self):
-        """Очищає результати"""
+        """Очищує результати"""
         self.results_list.clear()
         self.current_results = []

@@ -1,8 +1,8 @@
 """
-ProcessingManager - управління автоматичною обробкою
+ProcessingManager - управління автоматичною обробкою v2.0
 
 Відповідає за:
-- Автоматичну обробку рядків
+- Автоматичну обробку з жорсткими критеріями (ТІЛЬКИ 1 результат ≥98%)
 - Напівавтоматичну обробку (з підтвердженням)
 - Застосування індексів за правилами
 - Управління прогресом обробки
@@ -19,7 +19,7 @@ from utils.undo_manager import UndoManager
 
 
 class ProcessingManager:
-    """Менеджер для автоматичної обробки рядків"""
+    """Менеджер для автоматичної обробки рядків з жорсткими критеріями"""
     
     def __init__(self, excel_handler: ExcelHandler, undo_manager: UndoManager):
         """
@@ -38,55 +38,84 @@ class ProcessingManager:
         self.is_stopped = False
         self.semi_auto_waiting = False
         
+        # Статистика
+        self.stats = {
+            'total': 0,
+            'auto_applied': 0,
+            'manual_required': 0,
+            'not_found': 0,
+            'skipped': 0,
+            'errors': 0
+        }
+        
         # Параметри обробки
-        self.min_confidence = 80
         self.current_row = -1
         
         # Колбеки для оновлення UI
         self.on_progress_update: Optional[Callable[[int, int], None]] = None
-        self.on_row_processed: Optional[Callable[[int, str], None]] = None
+        self.on_row_processed: Optional[Callable[[int, str, str], None]] = None  # row, index, mode
         self.on_semi_auto_pause: Optional[Callable[[int, List[Dict]], None]] = None
     
     def start_auto_processing(
         self,
         start_row: int,
         total_rows: int,
-        min_confidence: int,
-        search_func: Callable[[Address], List[Dict]]
+        search_func: Callable[[Address, bool], Dict]  # Змінено! Тепер повертає Dict
     ) -> Dict[str, int]:
         """
-        Запускає автоматичну обробку
+        Запускає ЖОРСТКУ автоматичну обробку
+        
+        НОВІ ПРАВИЛА:
+        - Застосовується ТІЛЬКИ якщо є ОДИН результат ≥98%
+        - Будинок має ТОЧНО співпадати
+        - Індекс співпадає (якщо заданий)
         
         Args:
             start_row: Початковий рядок
             total_rows: Загальна кількість рядків
-            min_confidence: Мінімальна точність для автозастосування
-            search_func: Функція пошуку адреси
+            search_func: Функція пошуку (має бути search_manager.search_with_auto)
             
         Returns:
-            Словник зі статистикою: {'processed': N, 'skipped': M}
+            Словник зі статистикою: {
+                'total': N,
+                'auto_applied': X,
+                'manual_required': Y,
+                'not_found': Z,
+                'skipped': M
+            }
         """
         self.is_processing = True
         self.is_stopped = False
-        self.min_confidence = min_confidence
         self.current_row = start_row
         
-        processed_count = 0
-        skipped_count = 0
+        # Скидаємо статистику
+        self.stats = {
+            'total': total_rows - start_row,
+            'auto_applied': 0,
+            'manual_required': 0,
+            'not_found': 0,
+            'skipped': 0,
+            'errors': 0
+        }
         
         mapping = self.excel_handler.column_mapping
         if not mapping or 'index' not in mapping:
             self.logger.error("Column mapping не налаштовано")
-            return {'processed': 0, 'skipped': 0}
+            return self.stats
         
         idx_col = mapping['index'][0]
         old_index_col_idx = self._get_old_index_column_idx()
+        
+        self.logger.info("=" * 80)
+        self.logger.info("🚀 ПОЧАТОК АВТОМАТИЧНОЇ ОБРОБКИ")
+        self.logger.info(f"   Рядків: {start_row} - {total_rows}")
+        self.logger.info("=" * 80)
         
         for row_idx in range(start_row, total_rows):
             QApplication.processEvents()
             
             if self.is_stopped:
-                self.logger.info("Обробку зупинено користувачем")
+                self.logger.info("⏸️  Обробку зупинено користувачем")
                 break
             
             # Оновлюємо прогрес
@@ -95,54 +124,80 @@ class ProcessingManager:
             
             # Перевіряємо чи вже проставлено
             if self._is_row_already_processed(row_idx, idx_col, old_index_col_idx):
-                skipped_count += 1
+                self.stats['skipped'] += 1
                 continue
             
             try:
-                # Отримуємо адресу та шукаємо
+                # Отримуємо адресу
                 address = self.excel_handler.get_address_from_row(row_idx)
-                results = search_func(address)
                 
-                if not results:
-                    continue
+                # НОВИЙ ПОШУК з жорсткими критеріями
+                result = search_func(address, auto_apply=True)  # auto_apply=True!
                 
-                # Обробляємо найкращий результат
-                best_result = results[0]
-                confidence = best_result.get('confidence', 0)
-                
-                # Визначаємо індекс за правилами
-                index = self._determine_index(best_result)
-                
-                # Застосовуємо якщо точність достатня
-                if confidence >= min_confidence and index:
-                    self._apply_index_to_row(row_idx, index, idx_col)
-                    processed_count += 1
+                if result['mode'] == 'auto' and result['applied']:
+                    # ✅ АВТОПІДСТАНОВКА УСПІШНА
+                    auto_result = result['auto_result']
+                    index = self._determine_index(auto_result)
                     
-                    if self.on_row_processed:
-                        self.on_row_processed(row_idx, index)
+                    if index:
+                        self._apply_index_to_row(row_idx, index, idx_col)
+                        self.stats['auto_applied'] += 1
+                        
+                        if self.on_row_processed:
+                            self.on_row_processed(row_idx, index, 'auto')
+                        
+                        self.logger.debug(
+                            f"✅ Рядок {row_idx}: AUTO -> [{index}] "
+                            f"{auto_result['city']}, {auto_result['street']}, {auto_result['building']}"
+                        )
+                
+                elif result['mode'] == 'manual':
+                    # ⚠️ ПОТРІБЕН РУЧНИЙ ВИБІР
+                    self.stats['manual_required'] += 1
+                    
+                    self.logger.debug(
+                        f"⚠️  Рядок {row_idx}: MANUAL (знайдено {result['total_found']} варіантів) - "
+                        f"{address.city}, {address.street}, {address.building}"
+                    )
+                
+                else:
+                    # ❌ НІЧОГО НЕ ЗНАЙДЕНО
+                    self.stats['not_found'] += 1
+                    
+                    self.logger.debug(
+                        f"❌ Рядок {row_idx}: NOT_FOUND - "
+                        f"{address.city}, {address.street}, {address.building}"
+                    )
                         
             except Exception as e:
-                self.logger.error(f"Помилка обробки рядка {row_idx}: {e}")
+                self.logger.error(f"🔥 Помилка обробки рядка {row_idx}: {e}")
+                self.stats['errors'] += 1
                 continue
         
         self.is_processing = False
-        return {'processed': processed_count, 'skipped': skipped_count}
+        
+        # Підсумкова статистика
+        self._log_final_stats()
+        
+        return self.stats
     
     def start_semi_auto_processing(
         self,
         start_row: int,
         total_rows: int,
-        min_confidence: int,
-        search_func: Callable[[Address], List[Dict]]
+        search_func: Callable[[Address, bool], Dict]
     ) -> Dict[str, int]:
         """
-        Запускає напівавтоматичну обробку (з паузами на підтвердження)
+        Запускає напівавтоматичну обробку (з паузами на ручний вибір)
+        
+        ЛОГІКА:
+        - Якщо є автопідстановка (1 результат ≥98%) - застосовує автоматично
+        - Якщо потрібен ручний вибір - ЗУПИНЯЄТЬСЯ і чекає вибору
         
         Args:
             start_row: Початковий рядок
             total_rows: Загальна кількість рядків
-            min_confidence: Мінімальна точність для автозастосування
-            search_func: Функція пошуку адреси
+            search_func: Функція пошуку
             
         Returns:
             Словник зі статистикою
@@ -150,18 +205,27 @@ class ProcessingManager:
         self.is_processing = True
         self.is_stopped = False
         self.semi_auto_waiting = False
-        self.min_confidence = min_confidence
         self.current_row = start_row
         
-        processed_count = 0
-        skipped_count = 0
+        # Скидаємо статистику якщо це новий запуск
+        if start_row == 0 or not hasattr(self, 'stats'):
+            self.stats = {
+                'total': total_rows - start_row,
+                'auto_applied': 0,
+                'manual_required': 0,
+                'not_found': 0,
+                'skipped': 0,
+                'errors': 0
+            }
         
         mapping = self.excel_handler.column_mapping
         if not mapping or 'index' not in mapping:
-            return {'processed': 0, 'skipped': 0}
+            return self.stats
         
         idx_col = mapping['index'][0]
         old_index_col_idx = self._get_old_index_column_idx()
+        
+        self.logger.info("🔄 Напівавтоматична обробка...")
         
         for row_idx in range(start_row, total_rows):
             QApplication.processEvents()
@@ -173,46 +237,59 @@ class ProcessingManager:
                 self.on_progress_update(row_idx + 1, total_rows)
             
             if self._is_row_already_processed(row_idx, idx_col, old_index_col_idx):
-                skipped_count += 1
+                self.stats['skipped'] += 1
                 continue
             
             try:
                 address = self.excel_handler.get_address_from_row(row_idx)
-                results = search_func(address)
+                result = search_func(address, auto_apply=True)
                 
-                if not results:
-                    continue
-                
-                best_result = results[0]
-                confidence = best_result.get('confidence', 0)
-                index = self._determine_index(best_result)
-                
-                if confidence >= min_confidence and index:
-                    self._apply_index_to_row(row_idx, index, idx_col)
-                    processed_count += 1
+                if result['mode'] == 'auto' and result['applied']:
+                    # Автопідстановка
+                    auto_result = result['auto_result']
+                    index = self._determine_index(auto_result)
                     
-                    if self.on_row_processed:
-                        self.on_row_processed(row_idx, index)
+                    if index:
+                        self._apply_index_to_row(row_idx, index, idx_col)
+                        self.stats['auto_applied'] += 1
+                        
+                        if self.on_row_processed:
+                            self.on_row_processed(row_idx, index, 'auto')
+                
                 else:
-                    # Пауза для ручного вибору
+                    # ПАУЗА для ручного вибору
                     self.semi_auto_waiting = True
                     self.current_row = row_idx
                     
-                    if self.on_semi_auto_pause:
-                        self.on_semi_auto_pause(row_idx, results)
+                    if result['mode'] == 'manual':
+                        self.stats['manual_required'] += 1
+                    else:
+                        self.stats['not_found'] += 1
                     
-                    return {'processed': processed_count, 'skipped': skipped_count}
+                    if self.on_semi_auto_pause:
+                        # Передаємо ручні результати
+                        manual_results = result.get('manual_results', [])
+                        self.on_semi_auto_pause(row_idx, manual_results)
+                    
+                    # ЗУПИНЯЄМОСЬ і чекаємо вибору користувача
+                    return self.stats
                     
             except Exception as e:
                 self.logger.error(f"Помилка обробки рядка {row_idx}: {e}")
+                self.stats['errors'] += 1
                 continue
         
         self.is_processing = False
-        return {'processed': processed_count, 'skipped': skipped_count}
+        self._log_final_stats()
+        
+        return self.stats
     
-    def continue_semi_auto(self, search_func: Callable[[Address], List[Dict]]) -> Dict[str, int]:
+    def continue_semi_auto(
+        self, 
+        search_func: Callable[[Address, bool], Dict]
+    ) -> Dict[str, int]:
         """
-        Продовжує напівавтоматичну обробку після паузи
+        Продовжує напівавтоматичну обробку після ручного вибору
         
         Args:
             search_func: Функція пошуку
@@ -221,14 +298,14 @@ class ProcessingManager:
             Словник зі статистикою
         """
         if not self.semi_auto_waiting:
-            return {'processed': 0, 'skipped': 0}
+            return self.stats
         
         self.semi_auto_waiting = False
         next_row = self.current_row + 1
         
         total_rows = len(self.excel_handler.df)
         return self.start_semi_auto_processing(
-            next_row, total_rows, self.min_confidence, search_func
+            next_row, total_rows, search_func
         )
     
     def stop_processing(self):
@@ -236,6 +313,7 @@ class ProcessingManager:
         self.is_stopped = True
         self.semi_auto_waiting = False
         self.is_processing = False
+        self.logger.info("⏹️  Обробку зупинено")
     
     def apply_index(self, row_idx: int, index: str) -> bool:
         """
@@ -267,6 +345,9 @@ class ProcessingManager:
             
             # Застосовуємо новий індекс
             self.excel_handler.df.iloc[row_idx, idx_col] = index
+            
+            if self.on_row_processed:
+                self.on_row_processed(row_idx, index, 'manual')
             
             return True
             
@@ -357,3 +438,16 @@ class ProcessingManager:
             if col_name == 'Старий індекс':
                 return i
         return None
+    
+    def _log_final_stats(self):
+        """Виводить фінальну статистику в лог"""
+        self.logger.info("=" * 80)
+        self.logger.info("📊 СТАТИСТИКА ОБРОБКИ")
+        self.logger.info("=" * 80)
+        self.logger.info(f"Всього записів:        {self.stats['total']}")
+        self.logger.info(f"✅ Автопідстановка:    {self.stats['auto_applied']}")
+        self.logger.info(f"⚠️  Ручний вибір:       {self.stats['manual_required']}")
+        self.logger.info(f"❌ Не знайдено:        {self.stats['not_found']}")
+        self.logger.info(f"⏭️  Пропущено:          {self.stats['skipped']}")
+        self.logger.info(f"🔥 Помилки:            {self.stats['errors']}")
+        self.logger.info("=" * 80 + "\n")

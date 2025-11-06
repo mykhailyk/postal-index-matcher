@@ -10,6 +10,8 @@ from PyQt5.QtWidgets import (
     QProgressBar, QHeaderView, QAbstractItemView, QFrame, 
     QComboBox, QShortcut, QApplication, QCheckBox, QSpinBox
 )
+from typing import Dict, List, Optional
+
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QColor, QKeySequence
 # Менеджери
@@ -120,7 +122,6 @@ class MainWindow(QMainWindow):
         self.logger.info("GUI ініціалізовано")
     
     # ==================== ІНІЦІАЛІЗАЦІЯ UI ====================
-    
     def setup_table_sorting(self):
         """Налаштовує сортування при кліку на заголовки колонок"""
         from PyQt5.QtCore import Qt
@@ -772,41 +773,30 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Успіх", "Відповідність стовпців оновлено!")
     
     def search_address(self):
-        """Пошук адреси через SearchManager"""
-        # Перевіряємо чи завантажено довідник
-        if not self._cache_loaded:
-            QMessageBox.information(
-                self, 
-                "Завантаження", 
-                "Довідник міст ще завантажується у фоні.\n\nБудь ласка, зачекайте."
-            )
+        """Виконує пошук адреси"""
+        if self.current_row < 0:
+            self.status_bar.setText("❌ Виберіть рядок для пошуку")
             return
         
-        if self.current_row < 0:
-            QMessageBox.warning(self, "Увага", "Оберіть рядок для пошуку")
-            return
         try:
-            self.status_bar.setText("🔍 Пошук...")
-            
-            # Отримуємо адресу
             address = self.file_manager.excel_handler.get_address_from_row(self.current_row)
+            result = self.search_manager.search_with_auto(address, auto_apply=False)
             
-            # Виконуємо пошук через SearchManager (з логуванням)
-            results = self.search_manager.search(address, max_results=20)
-            
-            # Відображаємо результати
-            self.search_results = results
-            self.results_panel.show_results(results, address.building or "")
-            
-            if results:
-                self.address_panel.populate_from_results(results)
-            
-            self.status_bar.setText(f"✅ Знайдено {len(results)} варіантів")
-            
+            if result['mode'] == 'auto':
+                auto_result = result['auto_result']
+                all_results = [auto_result] + result['manual_results']
+                self.results_panel.display_results(all_results, highlight_first=True)
+                self.status_bar.setText(f"✅ Автопідстановка: [{auto_result['index']}]")
+            elif result['mode'] == 'manual':
+                self.results_panel.display_results(result['manual_results'], highlight_first=False)
+                self.status_bar.setText(f"⚠️ Знайдено {result['total_found']} варіантів")
+            else:
+                self.results_panel.clear()
+                self.status_bar.setText("❌ Нічого не знайдено")
         except Exception as e:
             self.logger.error(f"Помилка пошуку: {e}")
-            QMessageBox.critical(self, "Помилка", f"Помилка пошуку:\n{e}")
-            self.status_bar.setText("❌ Помилка пошуку")
+            self.status_bar.setText(f"❌ Помилка: {e}")
+
     
     def apply_index(self, index: str):
         """Застосування індексу через ProcessingManager"""
@@ -853,94 +843,141 @@ class MainWindow(QMainWindow):
                 self._continue_semi_auto()
     
     def start_auto_processing(self):
-        """Запуск автоматичної обробки"""
-        if self.current_row < 0:
-            self.current_row = 0
+        """Автоматична обробка"""
+        if self.file_manager.excel_handler.df is None:
+            QMessageBox.warning(self, "Помилка", "Файл не завантажено")
+            return
         
-        dialog = AutoProcessingDialog(
-            self.current_row,
-            len(self.file_manager.excel_handler.df),
-            self
+        dialog = AutoProcessingDialog(self)
+        if dialog.exec_() != dialog.Accepted:
+            return
+        
+        start_row = dialog.get_start_row()
+        self.progress_bar.setVisible(True)
+        self.auto_process_btn.setEnabled(False)
+        self.semi_auto_btn.setEnabled(False)
+        
+        total_rows = len(self.file_manager.excel_handler.df)
+        self.processing_manager.on_progress_update = self.update_progress
+        self.processing_manager.on_row_processed = self.on_row_auto_processed
+        
+        try:
+            stats = self.processing_manager.start_auto_processing(
+                start_row, total_rows,
+                search_func=lambda addr, auto: self.search_manager.search_with_auto(addr, auto_apply=auto)
+            )
+            self.show_processing_stats(stats)
+            self._display_table()
+        except Exception as e:
+            self.logger.error(f"Помилка: {e}")
+            QMessageBox.critical(self, "Помилка", str(e))
+        finally:
+            self.progress_bar.setVisible(False)
+            self.auto_process_btn.setEnabled(True)
+            self.semi_auto_btn.setEnabled(True)
+
+    def show_processing_stats(self, stats: Dict):
+        """Показує статистику обробки"""
+        message = (
+            f"Обробка завершена!\n\n"
+            f"Всього записів: {stats['total']}\n"
+            f"✅ Автопідстановка: {stats['auto_applied']}\n"
+            f"⚠️  Потрібен ручний вибір: {stats['manual_required']}\n"
+            f"❌ Не знайдено: {stats['not_found']}\n"
+            f"⏭️  Пропущено (вже оброблені): {stats['skipped']}\n"
+            f"🔥 Помилки: {stats['errors']}\n\n"
+            f"Ефективність автопідстановки: "
+            f"{round(stats['auto_applied'] / max(stats['total'] - stats['skipped'], 1) * 100, 1)}%"
         )
         
-        if dialog.exec_():
-            min_confidence = dialog.get_min_confidence()
-            
-            # Встановлюємо стан обробки
-            self.ui_state.set_processing_state(True)
-            
-            # Запускаємо через ProcessingManager
-            stats = self.processing_manager.start_auto_processing(
-                start_row=self.current_row,
-                total_rows=len(self.file_manager.excel_handler.df),
-                min_confidence=min_confidence,
-                search_func=lambda addr: self.search_manager.search(addr)
-            )
-            
-            # Завершуємо
-            self.ui_state.set_processing_state(False)
-            
-            self.status_bar.setText(
-                f"✅ Оброблено: {stats['processed']}, Пропущено: {stats['skipped']}"
-            )
-            
-            QMessageBox.information(
-                self,
-                "Завершено",
-                f"Обробка завершена!\n\nОброблено: {stats['processed']}\nПропущено: {stats['skipped']}"
-            )
+        QMessageBox.information(self, "Статистика обробки", message)
+
+    def update_progress(self, current: int, total: int):
+        """Оновлює прогрес-бар"""
+        progress = int(current / total * 100)
+        self.progressbar.setValue(progress)
+        self.statusbar.setText(f"Обробка: {current} / {total}")
+        QApplication.processEvents()
+
+    def on_row_auto_processed(self, row_idx: int, index: str, mode: str):
+        """Колбек після обробки рядка"""
+        # Оновлюємо рядок в таблиці
+        mapping = self.filemanager.excel_handler.column_mapping
+        if mapping and 'index' in mapping:
+            idx_col = mapping['index'][0]
+            item = self.table.item(row_idx, idx_col)
+            if item:
+                item.setText(index)
+                # Зелений колір для автопідстановки
+                if mode == 'auto':
+                    item.setForeground(QColor(76, 175, 80))
     
     def start_semi_auto_processing(self):
-        """Запуск напівавтоматичної обробки"""
-        if self.current_row < 0:
-            self.current_row = 0
+        """Напівавтоматична обробка"""
+        if self.file_manager.excel_handler.df is None:
+            QMessageBox.warning(self, "Помилка", "Файл не завантажено")
+            return
         
-        dialog = AutoProcessingDialog(
-            self.current_row,
-            len(self.file_manager.excel_handler.df),
-            self
-        )
+        self.progress_bar.setVisible(True)
+        self.semi_auto_btn.setEnabled(False)
+        self.auto_process_btn.setEnabled(False)
         
-        if dialog.exec_():
-            min_confidence = dialog.get_min_confidence()
-            
-            # Встановлюємо стан обробки
-            self.ui_state.set_processing_state(True)
-            
-            # Запускаємо через ProcessingManager
+        total_rows = len(self.file_manager.excel_handler.df)
+        self.processing_manager.on_progress_update = self.update_progress
+        self.processing_manager.on_row_processed = self.on_row_auto_processed
+        self.processing_manager.on_semi_auto_pause = self.on_semi_auto_pause
+        
+        try:
             stats = self.processing_manager.start_semi_auto_processing(
-                start_row=self.current_row,
-                total_rows=len(self.file_manager.excel_handler.df),
-                min_confidence=min_confidence,
-                search_func=lambda addr: self.search_manager.search(addr)
+                0, total_rows,
+                search_func=lambda addr, auto: self.search_manager.search_with_auto(addr, auto_apply=auto)
             )
-            
-            # Якщо не чекаємо - завершуємо
             if not self.processing_manager.semi_auto_waiting:
-                self.ui_state.set_processing_state(False)
-                
-                self.status_bar.setText(
-                    f"✅ Оброблено: {stats['processed']}, Пропущено: {stats['skipped']}"
-                )
-                
-                QMessageBox.information(
-                    self,
-                    "Завершено",
-                    f"Обробка завершена!\n\nОброблено: {stats['processed']}\nПропущено: {stats['skipped']}"
-                )
-    
-    def _continue_semi_auto(self):
-        """Продовження напівавтоматичної обробки"""
-        stats = self.processing_manager.continue_semi_auto(
-            search_func=lambda addr: self.search_manager.search(addr)
+                self.show_processing_stats(stats)
+                self.progress_bar.setVisible(False)
+                self.semi_auto_btn.setEnabled(True)
+                self.auto_process_btn.setEnabled(True)
+        except Exception as e:
+            self.logger.error(f"Помилка: {e}")
+            QMessageBox.critical(self, "Помилка", str(e))
+            self.progress_bar.setVisible(False)
+            self.semi_auto_btn.setEnabled(True)
+            self.auto_process_btn.setEnabled(True)
+
+
+    def on_semi_auto_pause(self, row_idx: int, results: List[Dict]):
+        """
+        Колбек коли напівавтоматична обробка зупинилась для ручного вибору
+        """
+        # Прокручуємо до рядка
+        self.table.selectRow(row_idx)
+        self.scroll_to_row(row_idx)
+        self.current_row = row_idx
+        
+        # Показуємо результати для вибору
+        if results:
+            self.resultspanel.display_results(results)
+            self.statusbar.setText(
+                f"⏸️  Обробка призупинена на рядку {row_idx + 1}. "
+                f"Оберіть результат вручну або натисніть 'Продовжити'"
+            )
+        else:
+            self.statusbar.setText(
+                f"⏸️  Рядок {row_idx + 1}: нічого не знайдено. "
+                f"Пропустіть або введіть вручну"
+            )
+
+    def continue_semi_auto(self):
+        """Продовжує напівавтоматичну обробку після паузи"""
+        stats = self.processingmanager.continue_semi_auto(
+            search_func=lambda addr, auto: self.searchmanager.search_with_auto(addr, auto_apply=auto)  # ✅ Правильно!
         )
         
-        if not self.processing_manager.semi_auto_waiting:
-            self.ui_state.set_processing_state(False)
-            
-            self.status_bar.setText(
-                f"✅ Оброблено: {stats['processed']}, Пропущено: {stats['skipped']}"
-            )
+        if not self.processingmanager.semi_auto_waiting:
+            self.uistate.set_processing_state(False)
+            self.show_processing_stats(stats)
+            self.progressbar.setVisible(False)
+            self.semiautobtn.setEnabled(True)
     
     def stop_processing(self):
         """Зупинка обробки"""
@@ -1428,6 +1465,56 @@ class MainWindow(QMainWindow):
             self.address_panel.cascade_city_list.hide()
         if hasattr(self.address_panel, 'cascade_street_list'):
             self.address_panel.cascade_street_list.hide()
+            
+            
+    def on_semi_auto_pause(self, row_idx: int, results: List[Dict]):
+        """Пауза напівавто"""
+        self.current_row = row_idx
+        self.table.selectRow(row_idx)
+        self.scroll_to_row(row_idx)
+        
+        if results:
+            self.results_panel.display_results(results, highlight_first=False)
+            self.status_bar.setText(f"⏸️ Рядок {row_idx + 1} - оберіть результат")
+        else:
+            self.results_panel.clear()
+            self.status_bar.setText(f"⏸️ Рядок {row_idx + 1}: нічого не знайдено")
+
+    def show_processing_stats(self, stats: Dict):
+        """Показує статистику"""
+        total = stats['total'] - stats['skipped']
+        eff = round(stats['auto_applied'] / max(total, 1) * 100, 1)
+        
+        msg = (
+            f"Обробка завершена!\\n\\n"
+            f"Всього: {stats['total']}\\n"
+            f"✅ Автопідстановка: {stats['auto_applied']}\\n"
+            f"⚠️ Ручний вибір: {stats['manual_required']}\\n"
+            f"❌ Не знайдено: {stats['not_found']}\\n"
+            f"⏭️ Пропущено: {stats['skipped']}\\n"
+            f"🔥 Помилки: {stats['errors']}\\n\\n"
+            f"Ефективність: {eff}%"
+        )
+        QMessageBox.information(self, "Статистика", msg)
+
+    def update_progress(self, current: int, total: int):
+        """Оновити прогрес"""
+        if total > 0:
+            self.progress_bar.setValue(int(current / total * 100))
+        self.status_bar.setText(f"⏳ {current} / {total}")
+        QApplication.processEvents()
+
+    def on_row_auto_processed(self, row_idx: int, index: str, mode: str):
+        """Колбек після обробки"""
+        mapping = self.file_manager.excel_handler.column_mapping
+        if mapping and 'index' in mapping:
+            idx_col = mapping['index'][0]
+            item = self.table.item(row_idx, idx_col)
+            if item:
+                item.setText(index)
+                if mode == 'auto':
+                    item.setForeground(QColor(76, 175, 80))
+
     
     # ==================== ЗАКРИТТЯ ВІКНА ====================
     
