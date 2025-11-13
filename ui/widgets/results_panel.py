@@ -235,13 +235,6 @@ class ResultsPanel(QWidget):
             
             self.results_list.addItem(item)
     
-    def show_results(self, results, building_number="", highlight_first: bool = False):
-        """
-        LEGACY метод - для зворотної сумісності
-        Викликає новий метод display_results
-        """
-        self.display_results(results, highlight_first=highlight_first)
-    
     def on_result_double_clicked(self, item):
         """Обробка подвійного кліку на результат"""
         result = item.data(Qt.UserRole)

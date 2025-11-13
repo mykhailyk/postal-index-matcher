@@ -83,6 +83,7 @@ class MainWindow(QMainWindow):
         # Поточний стан
         self.current_row = -1
         self.search_results = []
+        self.df = None  # DataFrame для сортування
         self.auto_applied_rows = set()  # Запам'ятуємо які рядки проставили
 
         
@@ -455,8 +456,7 @@ class MainWindow(QMainWindow):
                     self.logger.info(f"✅ Сортування по '{column_name}' - {self.current_sort_order}")
                 except Exception as e:
                     self.logger.error(f"❌ Помилка сортування: {e}")
-
-
+c
         
     def sort_dataframe(self, column_name, order='asc'):
         """
@@ -931,6 +931,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Помилка", "Файл не завантажено")
             return
         
+        
         # ДІАЛОГ
         from PyQt5.QtWidgets import QDialog
         dialog = AutoProcessingDialog(self)
@@ -1123,7 +1124,7 @@ class MainWindow(QMainWindow):
         try:
             stats = self.processing_manager.start_semi_auto_processing(
                 0, total_rows,
-                search_func=lambda addr, auto: self.search_manager.search_with_auto(addr, auto_apply=auto)
+                search_func=lambda addr, auto: self.search_manager.search_with_auto(addr, auto_apply=True)
             )
             if not self.processing_manager.semi_auto_waiting:
                 self.show_processing_stats(stats)
@@ -1163,7 +1164,7 @@ class MainWindow(QMainWindow):
     def continue_semi_auto(self):
         """Продовжує напівавтоматичну обробку після паузи"""
         stats = self.processing_manager.continue_semi_auto(
-            search_func=lambda addr, auto: self.search_manager.search_with_auto(addr, auto_apply=auto)  # ✅ Правильно!
+            search_func=lambda addr, auto: self.search_manager.search_with_auto(addr, auto_apply=True)
         )
         
         if not self.processing_manager.semi_auto_waiting:
@@ -1450,7 +1451,7 @@ class MainWindow(QMainWindow):
     def _continue_semi_auto(self):
         """Продовжує напівавтоматичну обробку після паузи"""
         stats = self.processing_manager.continue_semi_auto(
-            search_func=lambda addr, auto: self.search_manager.search_with_auto(addr, auto_apply=auto)
+            search_func=lambda addr, auto: self.search_manager.search_with_auto(addr, auto_apply=True)
         )
         
         if not self.processing_manager.semi_auto_waiting:
@@ -1470,6 +1471,7 @@ class MainWindow(QMainWindow):
     def _display_table(self):
         """Відображає дані в таблиці"""
         df = self.file_manager.excel_handler.df
+        self.df = df  # Зберігаємо посилання
         
         if df is None or df.empty:
             return
