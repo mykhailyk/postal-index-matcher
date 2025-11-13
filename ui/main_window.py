@@ -456,7 +456,6 @@ class MainWindow(QMainWindow):
                     self.logger.info(f"✅ Сортування по '{column_name}' - {self.current_sort_order}")
                 except Exception as e:
                     self.logger.error(f"❌ Помилка сортування: {e}")
-c
         
     def sort_dataframe(self, column_name, order='asc'):
         """
@@ -616,7 +615,7 @@ c
             self.stop_btn = QPushButton("⏹ ЗУПИНИТИ")
             self.stop_btn.setStyleSheet(AppStyles.button_danger())
             self.stop_btn.clicked.connect(self.stop_processing)
-            self.statusBar().addPermanentWidget(self.stop_btn)
+            self.status_bar().addPermanentWidget(self.stop_btn)
     
     def _on_processing_finished_signal(self):
         """Обробка завершення обробки"""
@@ -633,7 +632,7 @@ c
         
         # Видаляємо кнопку ЗУПИНИТИ
         if self.stop_btn:
-            self.statusBar().removeWidget(self.stop_btn)
+            self.status_bar().removeWidget(self.stop_btn)
             self.stop_btn.deleteLater()
             self.stop_btn = None
     
@@ -775,15 +774,11 @@ c
                 
                 # ✅ ОНОВЛЮЄМО ТАБЛИЦЮ
                 self._display_table()
-                
-                # ❌ ВИДАЛІТЬ цю строку:
-                # self.ui_state.mapping_changed.emit()
+            
                 
                 self.logger.info(f"✅ Mapping налаштовано: {mapping}")
-                
-                # ❌ БЕЗ QMessageBox.information() - просто закриває діалог!
+
             else:
-                # ❌ USER НАТИСНУВ "Скасувати" - діалог просто закривається
                 self.logger.info("❌ Налаштування скасовано користувачем")
         
         except Exception as e:
@@ -896,7 +891,7 @@ c
                 
                 # ВИБИРАЄМО РЯДОК
                 self.table.selectRow(next_row)
-                self._scroll_to_row(next_row)
+                self.scroll_to_row(next_row)
                 self.current_row = next_row
                 
                 # ПОДАЄМО СИГНАЛ ВРУЧНУ
@@ -985,13 +980,6 @@ c
                     # ✅ ПРАВИЛЬНИЙ ФОРМАТ
                     results = self.search_manager.search_with_auto(address, auto_apply=False)
                     
-                    # results повертає:
-                    # {
-                    #     'mode': 'auto' або 'manual',
-                    #     'total_found': int,
-                    #     'auto_result': Dict (якщо mode=='auto'),
-                    #     'manual_results': List[Dict]
-                    # }
                     
                     if results['mode'] == 'auto' and results.get('auto_result'):
                         auto_result = results['auto_result']
@@ -1004,7 +992,7 @@ c
                             mapping = self.file_manager.excel_handler.column_mapping
                             if mapping and 'index' in mapping:
                                 idx_col = mapping['index'][0]
-                                self.file_manager.excel_handler.df.at[idx, self.file_manager.excel_handler.df.columns[idx_col]] = auto_index
+                                self.file_manager.excel_handler.df.iloc[idx, idx_col] = auto_index
                                 
                                 # Оновлюємо таблицю
                                 item = self.table.item(idx, idx_col)
@@ -1016,7 +1004,7 @@ c
                                     item.setFont(font)
                             
                             stats['auto_applied'] += 1
-                            self._scroll_to_row(idx)
+                            self.scroll_to_row(idx)
                             self.logger.info(f"✅ Рядок {idx + 1}: Автопідстановка [{auto_index}] - {auto_confidence}%")
                         else:
                             stats['manual_required'] += 1
@@ -1047,7 +1035,7 @@ c
             # ✅ НЕ вивантажуймо всю таблицю!
             # Лише оновлюємо розміри
 
-    def _scroll_to_row(self, row_idx: int):
+    def scroll_to_row(self, row_idx: int):
         """Скролює таблицю до конкретного рядка"""
         if 0 <= row_idx < self.table.rowCount():
             # Скролює та центрує рядок на екрані
@@ -1090,7 +1078,7 @@ c
         """Оновлює прогрес-бар"""
         progress = int(current / total * 100)
         self.progress_bar.setValue(progress)
-        self.statusbar.setText(f"Обробка: {current} / {total}")
+        self.status_bar.setText(f"Обробка: {current} / {total}")
         QApplication.processEvents()
 
     def on_row_auto_processed(self, row_idx: int, index: str, mode: str):
@@ -1156,7 +1144,7 @@ c
                 f"Оберіть результат вручну або натисніть 'Продовжити'"
             )
         else:
-            self.statusbar.setText(
+            self.status_bar.setText(
                 f"⏸️  Рядок {row_idx + 1}: нічого не знайдено. "
                 f"Пропустіть або введіть вручну"
             )
@@ -1168,7 +1156,7 @@ c
         )
         
         if not self.processing_manager.semi_auto_waiting:
-            self.uistate.set_processing_state(False)
+            self.ui_state.set_processing_state(False)
             self.show_processing_stats(stats)
             self.progress_bar.setVisible(False)
             self.semi_auto_btn.setEnabled(True)
@@ -1288,7 +1276,9 @@ c
                 self.search_manager.refresh_cache(force_reload=True)
                 
                 # Оновлюємо кеш у address_panel
-                self._load_magistral_cache()
+                records = self.search_manager.get_magistral_records()
+                if records and self.address_panel:
+                    self.address_panel.set_magistral_cache(records)
                 
                 self.status_bar.setText("✅ Кеш оновлено")
                 QMessageBox.information(self, "Готово", "Кеш успішно оновлено!")
