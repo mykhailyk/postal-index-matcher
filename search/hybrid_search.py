@@ -72,6 +72,37 @@ class HybridSearch:
         """
         self._ensure_loaded()
         
+        # ============ СПЕЦІАЛЬНА ОБРОБКА: абонентська скринька ============
+        if address.street and ('а/с' in address.street.lower() or 'п/с' in address.street.lower() or 'абонент' in address.street.lower()):
+            if 'київ' in address.city.lower():
+                result = {
+                    'region': 'Київ',
+                    'district': 'Київ',
+                    'city': 'м. Київ',
+                    'city_ua': 'м. Київ',
+                    'street': f'{address.street} (Головпоштамт)',
+                    'street_ua': f'{address.street} (Головпоштамт)',
+                    'building': '',
+                    'buildings': '',
+                    'index': '01001',
+                    'score': 0.95,
+                    'confidence': 95,
+                    'features': 'Абонентська скринька',
+                    'not_working': '',
+                    'is_working': True
+                }
+                self.logger.info("=" * 80)
+                self.logger.info("✅ СПЕЦІАЛЬНА ОБРОБКА: Абонентська скринька")
+                self.logger.info(f"   {address.street} → Індекс 01001")
+                self.logger.info("=" * 80 + "\n")
+                
+                return {
+                    'auto': result,
+                    'manual': [result],
+                    'total_found': 1,
+                    'search_mode': 'auto'
+                }
+        
         if not self.magistral_records:
             self.logger.error("❌ Magistral records порожні!")
             return self._empty_result()
@@ -249,10 +280,10 @@ class HybridSearch:
         """
         ЖОРСТКИЙ розрахунок score для високої точності
         
-        Нова вагова система:
+        Вагова система:
         - Місто: 35%
         - Вулиця: 35%
-        - Будинок: 25% (підвищено!)
+        - Будинок: 25%
         - Індекс: 5%
         
         З жорсткими фільтрами та штрафами
@@ -264,6 +295,7 @@ class HybridSearch:
         query_street = self.normalizer.normalize_street(address.street)
         query_building = self.normalizer.normalize_text(address.building) if address.building else ""
         query_index = address.index.strip().lstrip('0') if address.index else ""
+        query_region = self.normalizer.normalize_region(address.region) if address.region else ""
         
         # ============ 1. МІСТО (35%) - ЖОРСТКИЙ ФІЛЬТР ============
         city_similarity = 0.0
@@ -279,6 +311,17 @@ class HybridSearch:
                 return city_similarity * 0.2
             
             total_score += city_similarity * 0.35
+        
+        # ============ ФІЛЬТР РЕГІОНУ (НОВЕ!) ============
+        # Якщо область задана, перевіряємо її строго
+        if query_region:
+            record_region = self.normalizer.normalize_region(record.region) if record.region else ""
+            
+            if record_region:
+                region_sim = self.similarity.jaro_winkler_similarity(query_region, record_region)
+                if region_sim < 0.80:
+                    # Регіон НЕ збігся - не повертаємо результат з іншого регіону
+                    return 0.0
         
         # ============ 2. ВУЛИЦЯ (35%) - ЖОРСТКИЙ ФІЛЬТР ============
         street_similarity = 0.0

@@ -83,6 +83,8 @@ class MainWindow(QMainWindow):
         # Поточний стан
         self.current_row = -1
         self.search_results = []
+        self.auto_applied_rows = set()  # Запам'ятуємо які рядки проставили
+
         
         # Віджети (ініціалізуються в init_ui)
         self.table = None
@@ -424,43 +426,37 @@ class MainWindow(QMainWindow):
         
         return panel
         
-    def on_header_clicked(self, logical_index):
-        """
-        Обробник кліку по заголовку колонки
-        """
-        from utils.logger import Logger
-        
-        # Перевіряємо чи є дані
-        if self.df is None or self.df.empty:
-            return
-        
-        # Визначаємо порядок сортування
-        if self.current_sort_column == logical_index:
-            # Перемикаємо: asc -> desc -> asc
-            if self.current_sort_order == 'asc':
-                self.current_sort_order = 'desc'
-            else:
-                self.current_sort_order = 'asc'
-        else:
-            # Нова колонка - починаємо з asc
-            self.current_sort_column = logical_index
-            self.current_sort_order = 'asc'
-        
-        # Отримуємо назву колонки
-        column_name = self.df.columns[logical_index]
-        
-        # Виконуємо сортування
-        self.sort_dataframe(column_name, self.current_sort_order)
-        
-        # Оновлюємо відображення таблиці
-        self.load_data_to_table()
-        
-        # Оновлюємо візуальну підказку
-        self.update_header_sort_indicator(logical_index, self.current_sort_order)
-        
-        # Логуємо
-        logger = Logger()
-        logger.info(f"Сортування: '{column_name}' ({self.current_sort_order})")
+    def on_header_clicked(self):
+        """Обробка кліку на заголовок колонки"""
+        header = self.sender()
+        if header:
+            column_idx = self.table.horizontalHeader().visualIndexAt(header.x())
+            if column_idx >= 0:
+                column_name = self.file_manager.excel_handler.df.columns[column_idx]
+                
+                # Визначаємо напрямок сортування
+                ascending = self.current_sort_order != 'asc'
+                
+                # ✅ СОРТУЄМО НАПРЯМУ В DATAFRAME
+                try:
+                    self.file_manager.excel_handler.df.sort_values(
+                        by=column_name, 
+                        ascending=ascending, 
+                        inplace=True
+                    )
+                    self.file_manager.excel_handler.df.reset_index(drop=True, inplace=True)
+                    
+                    # Перемикаємо напрямок
+                    self.current_sort_order = 'asc' if ascending else 'desc'
+                    
+                    # Оновлюємо таблицю
+                    self._display_table()
+                    
+                    self.logger.info(f"✅ Сортування по '{column_name}' - {self.current_sort_order}")
+                except Exception as e:
+                    self.logger.error(f"❌ Помилка сортування: {e}")
+
+
         
     def sort_dataframe(self, column_name, order='asc'):
         """
@@ -468,7 +464,7 @@ class MainWindow(QMainWindow):
         """
         from utils.logger import Logger
         
-        if self.df is None or column_name not in self.df.columns:
+        if self.file_manager.excel_handler.df is None or column_name not in self.file_manager.excel_handler.df.columns:
             return
         
         # Визначаємо напрямок
@@ -476,17 +472,17 @@ class MainWindow(QMainWindow):
         
         try:
             # Заповнюємо NaN пустими рядками
-            self.df[column_name] = self.df[column_name].fillna('')
+            self.file_manager.excel_handler.df[column_name] = self.file_manager.excel_handler.df[column_name].fillna('')
             
             # Сортуємо
-            self.df = self.df.sort_values(
+            self.file_manager.excel_handler.df = self.file_manager.excel_handler.df.sort_values(
                 by=column_name,
                 ascending=ascending,
                 na_position='last'
             )
             
             # Скидаємо індекс
-            self.df = self.df.reset_index(drop=True)
+            self.file_manager.excel_handler.df = self.file_manager.excel_handler.df.reset_index(drop=True)
             
         except Exception as e:
             logger = Logger()
@@ -700,17 +696,16 @@ class MainWindow(QMainWindow):
             self.ui_state.set_file_loaded(file_path)
             self._display_table()
             
-            # Пропонуємо налаштувати колонки
+            # ✅ ПЕРЕВІРЯЄМО ЧИ УЖЕ НАЛАШТОВАНИЙ MAPPING
             if not self.file_manager.excel_handler.column_mapping:
-                reply = QMessageBox.question(
-                    self,
-                    "Налаштування стовпців",
-                    "Бажаєте налаштувати відповідність стовпців зараз?",
-                    QMessageBox.Yes | QMessageBox.No
-                )
-                if reply == QMessageBox.Yes:
-                    self.configure_columns()
+                # ❌ ЕСЛИ MAPPING НЕ НАЛАШТОВАНО - ВИКЛИКАЄМО ДІАЛОГ ВІДРАЗУ
+                self.configure_columns()
+            else:
+                # ✅ ЕСЛИ MAPPING УЖЕ НАЛАШТОВАНО - ІНІЦІАЛІЗУЄМО СТАРИЙ ІНДЕКС
+                self.file_manager._initialize_old_index_column()
+                self._display_table()  # Оновлюємо таблицю щоб показати нову колонку
         else:
+            # ❌ ЯКЩО ФАЙЛ НЕ ЗАВАНТАЖЕНО
             QMessageBox.critical(self, "Помилка", "Не вдалося завантажити файл")
     
     def save_file(self):
@@ -753,24 +748,50 @@ class MainWindow(QMainWindow):
     def configure_columns(self):
         """Налаштування відповідності стовпців"""
         if self.file_manager.excel_handler.df is None or self.file_manager.excel_handler.df.empty:
+            QMessageBox.warning(self, "Помилка", "Файл не завантажено")
             return
         
-        df_sample = self.file_manager.excel_handler.df.head(10)
-        
-        dialog = ColumnMappingDialog(
-            self.file_manager.excel_handler.get_column_names(),
-            self.file_manager.excel_handler.column_mapping or {},
-            df_sample,
-            self
-        )
-        
-        if dialog.exec_():
-            mapping = dialog.get_mapping()
-            self.file_manager.excel_handler.set_column_mapping(mapping)
-            self._display_table()
-            self.file_manager.copy_to_old_index()
+        try:
+            # Отримуємо приклад даних для діалогу
+            df_sample = self.file_manager.excel_handler.df.head(10)
             
-            QMessageBox.information(self, "Успіх", "Відповідність стовпців оновлено!")
+            # Створюємо діалог налаштування
+            dialog = ColumnMappingDialog(
+                self.file_manager.excel_handler.get_column_names(),
+                self.file_manager.excel_handler.column_mapping or {},
+                df_sample,
+                self
+            )
+            
+            # ✅ ЯКЩО USER НАТИСНУВ OK
+            if dialog.exec_():
+                mapping = dialog.get_mapping()
+                
+                # ✅ ВСТАНОВЛЮЄМО MAPPING
+                self.file_manager.excel_handler.set_column_mapping(mapping)
+                
+                # ✅ ІНІЦІАЛІЗУЄМО КОЛОНКУ "СТАРИЙ ІНДЕКС"
+                self.file_manager._initialize_old_index_column()
+                
+                # ✅ ОНОВЛЮЄМО ТАБЛИЦЮ
+                self._display_table()
+                
+                # ❌ ВИДАЛІТЬ цю строку:
+                # self.ui_state.mapping_changed.emit()
+                
+                self.logger.info(f"✅ Mapping налаштовано: {mapping}")
+                
+                # ❌ БЕЗ QMessageBox.information() - просто закриває діалог!
+            else:
+                # ❌ USER НАТИСНУВ "Скасувати" - діалог просто закривається
+                self.logger.info("❌ Налаштування скасовано користувачем")
+        
+        except Exception as e:
+            self.logger.error(f"❌ Помилка налаштування колонок: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            QMessageBox.critical(self, "Помилка", f"Не вдалося налаштувати колонки:\n{e}")
+
     
     def search_address(self):
         """Виконує пошук адреси"""
@@ -797,112 +818,284 @@ class MainWindow(QMainWindow):
             self.logger.error(f"Помилка пошуку: {e}")
             self.status_bar.setText(f"❌ Помилка: {e}")
 
-    
     def apply_index(self, index: str):
-        """Застосування індексу через ProcessingManager"""
+        """Застосування індексу з правильним заповненням форми"""
         if self.current_row < 0:
             return
         
-        # Застосовуємо через ProcessingManager (з Undo)
-        success = self.processing_manager.apply_index(self.current_row, index)
-        
-        if success:
-            # Оновлюємо таблицю
+        try:
+            # ✅ ЗАПИСУЄМО ПРЯМО В DATAFRAME
             mapping = self.file_manager.excel_handler.column_mapping
-            if mapping and 'index' in mapping:
-                idx_col = mapping['index'][0]
-                item = self.table.item(self.current_row, idx_col)
-                if item:
-                    item.setText(index)
-                    item.setForeground(QColor(AppStyles.Colors.INDEX_APPLIED))
-                    font = item.font()
-                    font.setBold(True)
-                    item.setFont(font)
+            if not mapping or 'index' not in mapping:
+                self.logger.error("❌ Column mapping не налаштовано для 'index'")
+                return
             
-            # Логуємо через SearchManager
+            idx_col = mapping['index'][0]
+            
+            # ЗАПИСУЄМО В DATAFRAME
+            self.file_manager.excel_handler.df.iloc[self.current_row, idx_col] = index
+            
+            # ОНОВЛЮЄМО ТАБЛИЦЮ
+            item = self.table.item(self.current_row, idx_col)
+            if item:
+                item.setText(index)
+                item.setForeground(QColor(76, 175, 80))  # Зелений!
+                font = item.font()
+                font.setBold(True)
+                item.setFont(font)
+            
+            # ✅ ЗАПАМ'ЯТУЄМО РЯДОК
+            self.auto_applied_rows.add(self.current_row)
+            
+            # ЛОГУВАННЯ
             address = self.file_manager.excel_handler.get_address_from_row(self.current_row)
-            self.search_manager.log_index_applied(self.current_row, address, index)
+            self.logger.info(f"✅ Застосовано індекс [{index}] на рядку {self.current_row + 1}")
             
-            # Оновлюємо стан Undo/Redo
+            # ✅ ПЕРЕХОДИМО НА НАСТУПНИЙ
+            next_row = self.current_row + 1
+            
+            # ✅ ЗАПОВНЮЄМО ФОРМУ РУЧНОГО ВВЕДЕННЯ НАСТУПНОГО РЯДКА
+            if next_row < len(self.file_manager.excel_handler.df):
+                try:
+                    next_address = self.file_manager.excel_handler.get_address_from_row(next_row)
+                    
+                    # ЗАПОВНЮЄМО ПОЛЯ (ПРАВИЛЬНІ НАЗВИ!)
+                    self.address_panel.region_input.setText(next_address.region or '')
+                    self.address_panel.city_input.setText(next_address.city or '')
+                    self.address_panel.street_input.setText(next_address.street or '')
+                    self.address_panel.index_input.setText(next_address.index or '')
+                    
+                    # ОЧИЩУЄМО БУДИНКИ
+                    self.address_panel.buildings_combo.clear()
+                    self.address_panel.buildings_combo.hide()
+                    self.address_panel.buildings_label.hide()
+                    
+                    # ОЧИЩУЄМО РЕЗУЛЬТАТИ ПОШУКУ
+                    self.results_panel.clear()
+                    
+                    self.logger.info(f"📋 Форма заповнена для рядка {next_row + 1}: {next_address.city}, {next_address.street}")
+                    
+                except Exception as e:
+                    self.logger.error(f"❌ Помилка заповнення форми: {str(e)}")
+                    import traceback
+                    self.logger.error(traceback.format_exc())
+            
+            # UNDO/REDO
+            self.processing_manager.apply_index(self.current_row, index)
             self.ui_state.undo_redo_changed.emit()
             
             self.status_bar.setText(f"✅ Застосовано індекс {index}")
             
-            # Очищаємо форми
-            self._clear_address_forms()
-            
-            # Переходимо на наступний рядок
-            if self.current_row + 1 < self.table.rowCount():
-                self.table.selectRow(self.current_row + 1)
-                self.scroll_to_row(self.current_row + 1)
-            
-            # Продовжуємо напівавто якщо потрібно
-            if self.processing_manager.semi_auto_waiting:
-                self.processing_manager.semi_auto_waiting = False
-                QApplication.processEvents()
-                self._continue_semi_auto()
+            # ✅ ПЕРЕХОДИМО НА НАСТУПНИЙ РЯДОК ПРАВИЛЬНО
+            if next_row < self.table.rowCount():
+                try:
+                    # ВІДКЛЮЧАЄМО СИГНАЛ ДО ВИБОРУ
+                    self.table.itemSelectionChanged.disconnect()
+                except:
+                    pass
+                
+                # ВИБИРАЄМО РЯДОК
+                self.table.selectRow(next_row)
+                self._scroll_to_row(next_row)
+                self.current_row = next_row
+                
+                # ПОДАЄМО СИГНАЛ ВРУЧНУ
+                self.table.itemSelectionChanged.connect(self.on_row_selected)
+                self.logger.info(f"➡️ Перехід на рядок {next_row + 1}")
+                
+                # ✅ ДОДАНО: АВТОМАТИЧНИЙ ПОШУК НА НОВОМУ РЯДКУ
+                QTimer.singleShot(300, self.search_address)  # Затримка 300мс для оновлення форми
+                
+            else:
+                self.status_bar.setText("✅ Обробка завершена! Всі рядки оброблені.")
+                self.logger.info("🏁 Всі рядки оброблені!")
+                
+                # ОЧИЩУЄМО ФОРМИ
+                self.address_panel.city_input.clear()
+                self.address_panel.street_input.clear()
+                self.address_panel.region_input.clear()
+                self.address_panel.index_input.clear()
+                self.results_panel.clear()
+        
+        except Exception as e:
+            self.logger.error(f"❌ Критична помилка в apply_index: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            QMessageBox.critical(self, "Помилка", f"Помилка застосування індексу:\n{e}")
+
+
     
     def start_auto_processing(self):
-        """Автоматична обробка"""
+        """Запустити автоматичну обробку адрес"""
         if self.file_manager.excel_handler.df is None:
             QMessageBox.warning(self, "Помилка", "Файл не завантажено")
             return
         
+        # ДІАЛОГ
+        from PyQt5.QtWidgets import QDialog
         dialog = AutoProcessingDialog(self)
-        if dialog.exec_() != dialog.Accepted:
+        if dialog.exec_() != QDialog.Accepted:
             return
         
         start_row = dialog.get_start_row()
-        self.progress_bar.setVisible(True)
+        min_confidence = dialog.get_min_confidence()
+        
+        self.logger.info("=" * 80)
+        self.logger.info("🚀 ЗАПУСК АВТОМАТИЧНОЇ ОБРОБКИ")
+        self.logger.info(f"   Початковий рядок: {start_row + 1}")
+        self.logger.info(f"   Мінімальна точність: {min_confidence}%")
+        self.logger.info("=" * 80)
+        
         self.auto_process_btn.setEnabled(False)
         self.semi_auto_btn.setEnabled(False)
+        self.progress_bar.setVisible(True)
         
-        total_rows = len(self.file_manager.excel_handler.df)
-        self.processing_manager.on_progress_update = self.update_progress
-        self.processing_manager.on_row_processed = self.on_row_auto_processed
+        df = self.file_manager.excel_handler.df
+        total_rows = len(df)
+        
+        stats = {
+            'total': total_rows - start_row,
+            'auto_applied': 0,
+            'manual_required': 0,
+            'not_found': 0,
+            'skipped': 0,
+            'errors': 0
+        }
         
         try:
-            stats = self.processing_manager.start_auto_processing(
-                start_row, total_rows,
-                search_func=lambda addr, auto: self.search_manager.search_with_auto(addr, auto_apply=auto)
-            )
-            self.show_processing_stats(stats)
-            self._display_table()
+            for idx in range(start_row, total_rows):
+                self.current_row = idx
+                
+                if stats['total'] > 0:
+                    progress_pct = int((idx - start_row) / stats['total'] * 100)
+                    self.progress_bar.setValue(progress_pct)
+                
+                progress_pct = int((idx - start_row) / stats['total'] * 100) if stats['total'] > 0 else 0
+                self.status_bar.setText(f"⏳ Обробка {idx - start_row + 1}/{stats['total']} ({progress_pct}%)...")
+                QApplication.processEvents()
+                
+                try:
+                    address = self.file_manager.excel_handler.get_address_from_row(idx)
+                    
+                    if not address or not address.city:
+                        stats['skipped'] += 1
+                        continue
+                    
+                    # ✅ ПРАВИЛЬНИЙ ФОРМАТ
+                    results = self.search_manager.search_with_auto(address, auto_apply=False)
+                    
+                    # results повертає:
+                    # {
+                    #     'mode': 'auto' або 'manual',
+                    #     'total_found': int,
+                    #     'auto_result': Dict (якщо mode=='auto'),
+                    #     'manual_results': List[Dict]
+                    # }
+                    
+                    if results['mode'] == 'auto' and results.get('auto_result'):
+                        auto_result = results['auto_result']
+                        auto_index = auto_result['index']
+                        auto_confidence = auto_result.get('confidence', 0)
+                        
+                        # ✅ ПЕРЕВІРЯЄМО МІНІМАЛЬНУ ТОЧНІСТЬ
+                        if auto_confidence >= min_confidence:
+                            # Записуємо індекс напряму в DataFrame
+                            mapping = self.file_manager.excel_handler.column_mapping
+                            if mapping and 'index' in mapping:
+                                idx_col = mapping['index'][0]
+                                self.file_manager.excel_handler.df.at[idx, self.file_manager.excel_handler.df.columns[idx_col]] = auto_index
+                                
+                                # Оновлюємо таблицю
+                                item = self.table.item(idx, idx_col)
+                                if item:
+                                    item.setText(auto_index)
+                                    item.setForeground(QColor(76, 175, 80))
+                                    font = item.font()
+                                    font.setBold(True)
+                                    item.setFont(font)
+                            
+                            stats['auto_applied'] += 1
+                            self._scroll_to_row(idx)
+                            self.logger.info(f"✅ Рядок {idx + 1}: Автопідстановка [{auto_index}] - {auto_confidence}%")
+                        else:
+                            stats['manual_required'] += 1
+                            self.logger.info(f"⚠️ Рядок {idx + 1}: Низька точність ({auto_confidence}% < {min_confidence}%)")
+                    
+                    elif results['mode'] == 'manual':
+                        stats['manual_required'] += 1
+                        self.logger.info(f"⚠️ Рядок {idx + 1}: Потребує ручного вибору ({len(results['manual_results'])} варіантів)")
+                    
+                    else:
+                        stats['not_found'] += 1
+                        self.logger.info(f"❌ Рядок {idx + 1}: Не знайдено")
+                    
+                except Exception as e:
+                    self.logger.error(f"❌ Помилка рядка {idx + 1}: {str(e)}")
+                    stats['errors'] += 1
+            
+            self._show_processing_statistics(stats)
+            
         except Exception as e:
-            self.logger.error(f"Помилка: {e}")
-            QMessageBox.critical(self, "Помилка", str(e))
+            self.logger.error(f"❌ Критична помилка: {str(e)}")
+            QMessageBox.critical(self, "Помилка", f"Помилка обробки:\n{e}")
+        
         finally:
             self.progress_bar.setVisible(False)
             self.auto_process_btn.setEnabled(True)
             self.semi_auto_btn.setEnabled(True)
+            # ✅ НЕ вивантажуймо всю таблицю!
+            # Лише оновлюємо розміри
 
-    def show_processing_stats(self, stats: Dict):
+    def _scroll_to_row(self, row_idx: int):
+        """Скролює таблицю до конкретного рядка"""
+        if 0 <= row_idx < self.table.rowCount():
+            # Скролює та центрує рядок на екрані
+            self.table.scrollToItem(
+                self.table.item(row_idx, 0),
+                QAbstractItemView.PositionAtCenter
+            )
+            # Виділяємо рядок
+            self.table.setCurrentCell(row_idx, 0)
+
+
+
+    def _show_processing_statistics(self, stats: Dict):
         """Показує статистику обробки"""
+        total_processed = stats['auto_applied'] + stats['manual_required'] + stats['not_found']
+        efficiency = 0.0
+        
+        if total_processed > 0:
+            efficiency = (stats['auto_applied'] / total_processed) * 100
+        
         message = (
-            f"Обробка завершена!\n\n"
+            f"📊 Обробка завершена!\n\n"
             f"Всього записів: {stats['total']}\n"
             f"✅ Автопідстановка: {stats['auto_applied']}\n"
-            f"⚠️  Потрібен ручний вибір: {stats['manual_required']}\n"
+            f"⚠️ Ручний вибір: {stats['manual_required']}\n"
             f"❌ Не знайдено: {stats['not_found']}\n"
-            f"⏭️  Пропущено (вже оброблені): {stats['skipped']}\n"
+            f"🔄 Пропущено: {stats['skipped']}\n"
             f"🔥 Помилки: {stats['errors']}\n\n"
-            f"Ефективність автопідстановки: "
-            f"{round(stats['auto_applied'] / max(stats['total'] - stats['skipped'], 1) * 100, 1)}%"
+            f"⏱️ Ефективність: {efficiency:.1f}%"
         )
         
-        QMessageBox.information(self, "Статистика обробки", message)
+        self.logger.info("=" * 80)
+        self.logger.info(message.replace("\n", "\n   "))
+        self.logger.info("=" * 80 + "\n")
+        
+        QMessageBox.information(self, "Обробка завершена", message)
+
 
     def update_progress(self, current: int, total: int):
         """Оновлює прогрес-бар"""
         progress = int(current / total * 100)
-        self.progressbar.setValue(progress)
+        self.progress_bar.setValue(progress)
         self.statusbar.setText(f"Обробка: {current} / {total}")
         QApplication.processEvents()
 
     def on_row_auto_processed(self, row_idx: int, index: str, mode: str):
         """Колбек після обробки рядка"""
         # Оновлюємо рядок в таблиці
-        mapping = self.filemanager.excel_handler.column_mapping
+        mapping = self.file_manager.excel_handler.column_mapping
         if mapping and 'index' in mapping:
             idx_col = mapping['index'][0]
             item = self.table.item(row_idx, idx_col)
@@ -956,8 +1149,8 @@ class MainWindow(QMainWindow):
         
         # Показуємо результати для вибору
         if results:
-            self.resultspanel.display_results(results)
-            self.statusbar.setText(
+            self.results_panel.display_results(results)
+            self.status_bar.setText(
                 f"⏸️  Обробка призупинена на рядку {row_idx + 1}. "
                 f"Оберіть результат вручну або натисніть 'Продовжити'"
             )
@@ -969,15 +1162,15 @@ class MainWindow(QMainWindow):
 
     def continue_semi_auto(self):
         """Продовжує напівавтоматичну обробку після паузи"""
-        stats = self.processingmanager.continue_semi_auto(
-            search_func=lambda addr, auto: self.searchmanager.search_with_auto(addr, auto_apply=auto)  # ✅ Правильно!
+        stats = self.processing_manager.continue_semi_auto(
+            search_func=lambda addr, auto: self.search_manager.search_with_auto(addr, auto_apply=auto)  # ✅ Правильно!
         )
         
-        if not self.processingmanager.semi_auto_waiting:
+        if not self.processing_manager.semi_auto_waiting:
             self.uistate.set_processing_state(False)
             self.show_processing_stats(stats)
-            self.progressbar.setVisible(False)
-            self.semiautobtn.setEnabled(True)
+            self.progress_bar.setVisible(False)
+            self.semi_auto_btn.setEnabled(True)
     
     def stop_processing(self):
         """Зупинка обробки"""
@@ -985,7 +1178,7 @@ class MainWindow(QMainWindow):
         self.logger.info("Обробку зупинено користувачем")
     
     def undo_action(self):
-        """Відміна дії через UndoManager"""
+        """Відміна дії - повертає попередній індекс"""
         if not self.undo_manager.can_undo():
             return
         
@@ -993,31 +1186,45 @@ class MainWindow(QMainWindow):
         if not action:
             return
         
-        row_idx = action['row']
-        old_values = action['old_values']
-        
-        # Відновлюємо старі значення
-        for field_id, value in old_values.items():
-            self.file_manager.excel_handler.update_row(row_idx, {field_id: value})
-        
-        # Оновлюємо таблицю
-        mapping = self.file_manager.excel_handler.column_mapping
-        if mapping and 'index' in mapping:
-            for col_idx in mapping['index']:
-                item = self.table.item(row_idx, col_idx)
+        try:
+            row_idx = action['row']
+            old_values = action['old_values']
+            
+            # ✅ ЗАПИСУЄМО СТАРЕ ЗНАЧЕННЯ В DATAFRAME
+            mapping = self.file_manager.excel_handler.column_mapping
+            if 'index' in mapping:
+                idx_col = mapping['index'][0]
+                old_index = old_values.get('index', '')
+                
+                # ЗАПИСУЄМО СТАРИЙ ІНДЕКС В DATAFRAME
+                self.file_manager.excel_handler.df.iloc[row_idx, idx_col] = old_index
+                
+                # ✅ ОНОВЛЮЄМО КЛІТИНКУ В ТАБЛИЦІ
+                item = self.table.item(row_idx, idx_col)
                 if item:
-                    item.setText(str(old_values.get('index', '')))
-                    item.setForeground(QColor(AppStyles.Colors.INDEX_DEFAULT))
+                    item.setText(old_index)
+                    
+                    # ✅ ВИДАЛЯЄМО ЗЕЛЕНИЙ КОЛІР (чорний текст)
+                    item.setForeground(QColor(0, 0, 0))
                     font = item.font()
                     font.setBold(False)
                     item.setFont(font)
-        
-        self.ui_state.undo_redo_changed.emit()
-        self.status_bar.setText("↩️ Дію відмінено")
-        self.logger.info(f"Undo: рядок {row_idx}")
-    
+                
+                # ✅ ВИДАЛЯЄМО ЗІ СПИСКУ АВТОПРОСТАВЛЕНИХ
+                self.auto_applied_rows.discard(row_idx)
+            
+            self.logger.info(f"⤴️ UNDO: Рядок {row_idx + 1} - повернено індекс [{old_index}]")
+            self.status_bar.setText(f"⤴️ Відмінено: було [{old_index}]")
+            self.ui_state.undo_redo_changed.emit()
+            
+        except Exception as e:
+            self.logger.error(f"❌ Помилка UNDO: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+
+
     def redo_action(self):
-        """Повторення дії через UndoManager"""
+        """Повторення дії - повертає новий індекс"""
         if not self.undo_manager.can_redo():
             return
         
@@ -1025,28 +1232,42 @@ class MainWindow(QMainWindow):
         if not action:
             return
         
-        row_idx = action['row']
-        new_values = action['new_values']
-        
-        # Застосовуємо нові значення
-        for field_id, value in new_values.items():
-            self.file_manager.excel_handler.update_row(row_idx, {field_id: value})
-        
-        # Оновлюємо таблицю
-        mapping = self.file_manager.excel_handler.column_mapping
-        if mapping and 'index' in mapping:
-            for col_idx in mapping['index']:
-                item = self.table.item(row_idx, col_idx)
+        try:
+            row_idx = action['row']
+            new_values = action['new_values']
+            
+            # ✅ ЗАПИСУЄМО НОВЕ ЗНАЧЕННЯ В DATAFRAME
+            mapping = self.file_manager.excel_handler.column_mapping
+            if 'index' in mapping:
+                idx_col = mapping['index'][0]
+                new_index = new_values.get('index', '')
+                
+                # ЗАПИСУЄМО НОВИЙ ІНДЕКС В DATAFRAME
+                self.file_manager.excel_handler.df.iloc[row_idx, idx_col] = new_index
+                
+                # ✅ ОНОВЛЮЄМО КЛІТИНКУ В ТАБЛИЦІ
+                item = self.table.item(row_idx, idx_col)
                 if item:
-                    item.setText(str(new_values.get('index', '')))
-                    item.setForeground(QColor(AppStyles.Colors.INDEX_APPLIED))
+                    item.setText(new_index)
+                    
+                    # ✅ ВСТАНОВЛЮЄМО ЗЕЛЕНИЙ КОЛІР
+                    item.setForeground(QColor(76, 175, 80))
                     font = item.font()
                     font.setBold(True)
                     item.setFont(font)
-        
-        self.ui_state.undo_redo_changed.emit()
-        self.status_bar.setText("↪️ Дію повторено")
-        self.logger.info(f"Redo: рядок {row_idx}")
+                
+                # ✅ ДОДАЄМО ДО СПИСКУ АВТОПРОСТАВЛЕНИХ
+                self.auto_applied_rows.add(row_idx)
+            
+            self.logger.info(f"⤵️ REDO: Рядок {row_idx + 1} - повернено індекс [{new_index}]")
+            self.status_bar.setText(f"⤵️ Повторено: було [{new_index}]")
+            self.ui_state.undo_redo_changed.emit()
+            
+        except Exception as e:
+            self.logger.error(f"❌ Помилка REDO: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+
     
     def refresh_cache(self):
         """Оновлення кешу magistral.csv"""
@@ -1225,6 +1446,19 @@ class MainWindow(QMainWindow):
                 f"Успішно розпарсовано: {parsed_count}\n\n"
                 "Дивіться деталі в консолі."
             )
+            
+    def _continue_semi_auto(self):
+        """Продовжує напівавтоматичну обробку після паузи"""
+        stats = self.processing_manager.continue_semi_auto(
+            search_func=lambda addr, auto: self.search_manager.search_with_auto(addr, auto_apply=auto)
+        )
+        
+        if not self.processing_manager.semi_auto_waiting:
+            self._show_processing_statistics(stats)
+            self.progress_bar.setVisible(False)
+            self.semi_auto_btn.setEnabled(True)
+            self.auto_process_btn.setEnabled(True)
+
     
     def set_index_star(self):
         """Встановлює індекс *"""
@@ -1340,12 +1574,28 @@ class MainWindow(QMainWindow):
             text = " | ".join(parts) if parts else "Немає даних"
             self.original_data_label.setText(f"📋 Оригінальні дані: {text}")
             
+            # ✅ ДОДАНО: ЗАПОВНЮЄМО ФОРМУ РУЧНОГО ВВЕДЕННЯ
+            self.address_panel.region_input.setText(address.region or '')
+            self.address_panel.city_input.setText(address.city or '')
+            self.address_panel.street_input.setText(address.street or '')
+            self.address_panel.index_input.setText(address.index or '')
+            
+            # ОЧИЩУЄМО БУДИНКИ
+            self.address_panel.buildings_combo.clear()
+            self.address_panel.buildings_combo.hide()
+            self.address_panel.buildings_label.hide()
+            
+            self.logger.info(f"📋 Форма заповнена для рядка {self.current_row + 1}")
+            
         except Exception as e:
             self.logger.error(f"Помилка відображення даних: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
         
         # Автоматичний пошук
         self.search_address()
-    
+
+
     def on_cell_edited(self, item):
         """Обробка редагування комірки"""
         if not item:

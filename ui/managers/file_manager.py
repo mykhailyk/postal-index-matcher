@@ -58,59 +58,63 @@ class FileManager:
         return file_path if file_path else None
     
     def load_file(self, file_path: str) -> bool:
-        """
-        Завантажує Excel файл
-        
-        Args:
-            file_path: Шлях до файлу
-            
-        Returns:
-            True якщо успішно, False якщо помилка
-        """
+        """Завантажує Excel файл з ЗБЕРЕЖЕННЯМ НУЛІВ"""
         try:
             self.logger.info(f"Завантаження файлу: {file_path}")
             
             # Зберігаємо останню директорію
             SettingsManager.set_last_directory(os.path.dirname(file_path))
             
-            # Завантажуємо файл
+            # ✅ Завантажуємо файл (вже читає як текст в ExcelHandler)
             self.excel_handler.load_file(file_path)
+            
+            # ✅ Логування деталей
+            df_cols = self.excel_handler.df.columns.tolist()
+            self.logger.info(f"✓ Колони: {', '.join(df_cols[:5])}{'...' if len(df_cols) > 5 else ''}")
             
             # Створюємо віртуальну колонку "Старий індекс"
             self._initialize_old_index_column()
             
             self.current_file = file_path
-            self.logger.info(f"Файл завантажено: {len(self.excel_handler.df)} рядків")
+            self.logger.info(f"✓ Файл готовий: {len(self.excel_handler.df)} рядків")
             
             return True
             
         except Exception as e:
-            self.logger.error(f"Помилка завантаження файлу: {e}")
+            self.logger.error(f"❌ Помилка завантаження: {e}")
             import traceback
             self.logger.error(traceback.format_exc())
             return False
+
     
     def _initialize_old_index_column(self):
-        """Створює та заповнює колонку 'Старий індекс'"""
+        """Створює та заповнює колонку 'Старий індекс' копією ПОТОЧНОГО індексу"""
         if 'Старий індекс' in self.excel_handler.df.columns:
             return
         
-        # Знаходимо колонку індексу
-        index_col = None
-        if self.excel_handler.column_mapping:
-            index_col = self.excel_handler.column_mapping.get('index')
-            if isinstance(index_col, list):
-                index_col = index_col[0] if index_col else None
+        mapping = self.excel_handler.column_mapping
+        if not mapping or 'index' not in mapping:
+            self.logger.warning("⚠️ Column mapping не налаштовано для 'index'")
+            return
         
-        # Додаємо колонку після індексу
-        if index_col and index_col in self.excel_handler.df.columns:
-            self.excel_handler.df[index_col] = self.excel_handler.df[index_col].astype(str)
-            index_position = self.excel_handler.df.columns.get_loc(index_col)
-            self.excel_handler.df.insert(index_position + 1, 'Старий індекс', '')
-        else:
-            self.excel_handler.df['Старий індекс'] = ''
+        # ✅ ОТРИМУЄМО НОМЕР КОЛОНКИ ІНДЕКСУ
+        index_col_idx = mapping['index'][0]
+        index_col_name = self.excel_handler.df.columns[index_col_idx]
         
-        self.logger.info("Створено віртуальну колонку 'Старий індекс'")
+        try:
+            # ✅ КОПІЮЄМО ПОТОЧНІ ІНДЕКСИ
+            old_index_values = self.excel_handler.df[index_col_name].copy()
+            
+            # ✅ ДОДАЄМО КОЛОНКУ В КІНЕЦЬ (НЕ ПОСЕРЕДИНУ!)
+            self.excel_handler.df['Старий індекс'] = old_index_values
+            
+            self.logger.info(f"✅ Колонка 'Старий індекс' створена з копією індексу")
+            self.logger.info(f"✅ Приклади: {self.excel_handler.df['Старий індекс'].head(3).tolist()}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Помилка створення 'Старий індекс': {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
     
     def copy_to_old_index(self):
         """Копіює поточні значення індексу у 'Старий індекс'"""

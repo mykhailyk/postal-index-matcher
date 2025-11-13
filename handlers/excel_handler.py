@@ -17,15 +17,38 @@ class ExcelHandler:
         self.logger = Logger()
     
     def load_file(self, file_path: str) -> pd.DataFrame:
-        """Завантажує Excel файл"""
+        """Завантажує Excel файл з ЗБЕРЕЖЕННЯМ НУЛІВ"""
         try:
-            self.df = pd.read_excel(file_path)
+            # ✅ ЧИТАЄМО ВСІ КОЛОНИ ЯК ТЕКСТ
+            self.df = pd.read_excel(
+                file_path,
+                dtype=str,  # ✅ ВСІ ПОЛЯ - ТЕКСТ!
+                keep_default_na=False,  # ✅ НЕ перетворюємо 'NA' на NaN
+                na_values=[]  # ✅ НІЧ НЕ вважаємо за NaN
+            )
+            
+            # ✅ ВИДАЛІТЬ ПУСТІ РЯДКИ
+            self.df = self.df.dropna(how='all').reset_index(drop=True)
+            
             self.file_path = file_path
-            self.logger.info(f"Завантажено файл: {file_path}, рядків: {len(self.df)}")
+            self.logger.info(f"✓ Завантажено файл: {file_path}")
+            self.logger.info(f"✓ Рядків: {len(self.df)}")
+            self.logger.info(f"✓ Колон: {len(self.df.columns)}")
+            
+            # ✅ ЛОГУВАННЯ - показуємо скільки даних
+            for col in self.df.columns:
+                non_empty = self.df[col].notna().sum()
+                sample = self.df[col].iloc[0] if len(self.df) > 0 else "N/A"
+                self.logger.debug(f"   • {col}: {non_empty} значень (приклад: {sample})")
+            
             return self.df
+        
         except Exception as e:
-            self.logger.error(f"Помилка завантаження файлу {file_path}: {e}")
+            self.logger.error(f"❌ Помилка завантаження файлу {file_path}: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             raise
+
     
     def save_file(self, file_path: str = None):
         """Зберігає DataFrame у Excel файл (підтримує XLS і XLSX)"""
