@@ -203,12 +203,12 @@ class HybridSearch:
         if not results:
             return None
         
-        # Фільтруємо результати ≥98%
-        perfect_results = [r for r in results if r['confidence'] >= 98]
+        # Фільтруємо результати ≥ AUTO_MATCH_CONFIDENCE
+        perfect_results = [r for r in results if r['confidence'] >= config.AUTO_MATCH_CONFIDENCE]
         
-        # Має бути ТІЛЬКИ ОДИН результат з 98%+
+        # Має бути ТІЛЬКИ ОДИН результат з високою впевненістю
         if len(perfect_results) != 1:
-            self.logger.debug(f"Автопідстановка неможлива: знайдено {len(perfect_results)} результатів ≥98%")
+            self.logger.debug(f"Автопідстановка неможлива: знайдено {len(perfect_results)} результатів ≥{config.AUTO_MATCH_CONFIDENCE}%")
             return None
         
         result = perfect_results[0]
@@ -306,11 +306,11 @@ class HybridSearch:
             )
             
             # ЖОРСТКИЙ ФІЛЬТР: місто має бути дуже схожим
-            if city_similarity < 0.85:
+            if city_similarity < config.SCORE_CITY_THRESHOLD:
                 # Якщо місто не схоже - максимум 17% score
                 return city_similarity * 0.2
             
-            total_score += city_similarity * 0.35
+            total_score += city_similarity * config.SCORE_CITY_WEIGHT
         
         # ============ ФІЛЬТР РЕГІОНУ (НОВЕ!) ============
         # Якщо область задана, перевіряємо її строго
@@ -319,7 +319,7 @@ class HybridSearch:
             
             if record_region:
                 region_sim = self.similarity.jaro_winkler_similarity(query_region, record_region)
-                if region_sim < 0.80:
+                if region_sim < config.SCORE_REGION_THRESHOLD:
                     # Регіон НЕ збігся - не повертаємо результат з іншого регіону
                     return 0.0
         
@@ -332,11 +332,11 @@ class HybridSearch:
             )
             
             # ЖОРСТКИЙ ФІЛЬТР: вулиця має бути досить схожою
-            if street_similarity < 0.75:
+            if street_similarity < config.SCORE_STREET_THRESHOLD:
                 # Якщо вулиця не схожа - великий штраф
                 total_score += street_similarity * 0.10  # Замість 35% тільки 10%
             else:
-                total_score += street_similarity * 0.35
+                total_score += street_similarity * config.SCORE_STREET_WEIGHT
         
         # ============ 3. БУДИНОК (25%) - КРИТИЧНО ВАЖЛИВО! ============
         building_bonus = 0.0
@@ -350,7 +350,7 @@ class HybridSearch:
             
             if query_building_clean in buildings_list:
                 # ТОЧНЕ СПІВПАДІННЯ - повний бонус
-                building_bonus = 0.25
+                building_bonus = config.SCORE_BUILDING_EXACT_BONUS
                 total_score += building_bonus
             else:
                 # Часткове співпадіння (наприклад, "27" в "27А")
@@ -358,28 +358,28 @@ class HybridSearch:
                 for building in buildings_list:
                     if query_building_clean in building or building in query_building_clean:
                         # Часткове співпадіння - зменшений бонус
-                        building_bonus = 0.10
+                        building_bonus = config.SCORE_BUILDING_PARTIAL_BONUS
                         total_score += building_bonus
                         found_partial = True
                         break
                 
                 # Якщо будинок взагалі не знайдено - ШТРАФ
                 if not found_partial:
-                    total_score -= 0.15  # Штраф 15%
+                    total_score -= config.SCORE_BUILDING_PENALTY  # Штраф
         
         # ============ 4. ІНДЕКС (5%) ============
         if query_index and record.city_index:
             record_index = record.city_index.strip().lstrip('0')
             if query_index == record_index:
-                total_score += 0.05
+                total_score += config.SCORE_INDEX_WEIGHT
             else:
                 # Індекс не співпадає - невеликий штраф
                 total_score -= 0.02
         
         # ============ БОНУС ЗА ІДЕАЛЬНЕ СПІВПАДІННЯ ============
         # Якщо все майже ідеально - додатковий бонус
-        if city_similarity >= 0.98 and street_similarity >= 0.95 and building_bonus >= 0.25:
-            total_score += 0.10  # Бонус +10%
+        if city_similarity >= 0.98 and street_similarity >= 0.95 and building_bonus >= config.SCORE_BUILDING_EXACT_BONUS:
+            total_score += config.SCORE_PERFECT_MATCH_BONUS  # Бонус
         
         # Обмежуємо score від 0 до 1
         return max(0.0, min(total_score, 1.0))

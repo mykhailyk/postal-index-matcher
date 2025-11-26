@@ -23,6 +23,8 @@ from ui.widgets.column_mapping_dialog import ColumnMappingDialog
 from ui.widgets.address_selector_panel import AddressSelectorPanel
 from ui.widgets.results_panel import ResultsPanel
 from ui.widgets.auto_processing_dialog import AutoProcessingDialog
+from ui.widgets.top_panel import TopPanel
+from ui.widgets.table_panel import TablePanel
 
 # Утиліти
 from utils.undo_manager import UndoManager
@@ -88,7 +90,9 @@ class MainWindow(QMainWindow):
 
         
         # Віджети (ініціалізуються в init_ui)
-        self.table = None
+        # Віджети (ініціалізуються в init_ui)
+        self.top_panel = None
+        self.table_panel = None
         self.progress_bar = None
         self.status_bar = None
         self.results_panel = None
@@ -125,34 +129,7 @@ class MainWindow(QMainWindow):
         self.logger.info("GUI ініціалізовано")
     
     # ==================== ІНІЦІАЛІЗАЦІЯ UI ====================
-    def setup_table_sorting(self):
-        """Налаштовує сортування при кліку на заголовки колонок"""
-        from PyQt5.QtCore import Qt
-        
-        # Отримуємо header таблиці
-        header = self.table.horizontalHeader()
-        
-        # Дозволяємо клік по header
-        header.setSectionsClickable(True)
-        
-        # Підключаємо обробник кліку
-        header.sectionClicked.connect(self.on_header_clicked)
-        
-        # Встановлюємо курсор руки при наведенні
-        header.setCursor(Qt.PointingHandCursor)
-        
-        # Додаємо візуальну підказку
-        header.setStyleSheet("""
-            QHeaderView::section {
-                background-color: #f0f0f0;
-                padding: 8px;
-                border: 1px solid #d0d0d0;
-                font-weight: bold;
-            }
-            QHeaderView::section:hover {
-                background-color: #e0e0e0;
-            }
-        """)   
+    # ==================== ІНІЦІАЛІЗАЦІЯ UI ====================
        
     def _init_ui(self):
         """Ініціалізація інтерфейсу"""
@@ -175,13 +152,15 @@ class MainWindow(QMainWindow):
         central_widget.setLayout(main_layout)
         
         # Панелі
-        top_panel = self._create_top_panel()
-        main_layout.addWidget(top_panel)
+        self.top_panel = TopPanel()
+        self._connect_top_panel_signals()
+        main_layout.addWidget(self.top_panel)
         
         main_splitter = QSplitter(Qt.Horizontal)
         
-        left_panel = self._create_table_panel()
-        main_splitter.addWidget(left_panel)
+        self.table_panel = TablePanel()
+        self._connect_table_panel_signals()
+        main_splitter.addWidget(self.table_panel)
         
         right_panel = self._create_right_panel()
         main_splitter.addWidget(right_panel)
@@ -222,184 +201,29 @@ class MainWindow(QMainWindow):
         
         main_layout.addWidget(vertical_splitter)
     
-    def _create_top_panel(self):
-        """Верхня панель управління"""
-        panel = QFrame()
-        panel.setMaximumHeight(60)
-        layout = QVBoxLayout()
-        layout.setSpacing(3)
-        layout.setContentsMargins(5, 5, 5, 5)
-        
-        row1 = QHBoxLayout()
-        
-        # Файл
-        file_label = QLabel("📁")
-        file_label.setStyleSheet("font-size: 14px;")
-        row1.addWidget(file_label)
-        
-        self.file_label = QLabel("Не завантажено")
-        self.file_label.setStyleSheet(AppStyles.file_label())
-        row1.addWidget(self.file_label, 1)
-        
-        # Кнопки управління файлами
-        load_btn = QPushButton("Відкрити файл")
-        load_btn.setStyleSheet(AppStyles.button_default())
-        load_btn.clicked.connect(self.load_file)
-        row1.addWidget(load_btn)
-        
-        self.column_mapping_btn = QPushButton("⚙ Налаштувати стовпці")
-        self.column_mapping_btn.setEnabled(False)
-        self.column_mapping_btn.setStyleSheet(AppStyles.button_default())
-        self.column_mapping_btn.clicked.connect(self.configure_columns)
-        row1.addWidget(self.column_mapping_btn)
-        
-        self.save_btn = QPushButton("💾 Зберегти")
-        self.save_btn.setEnabled(False)
-        self.save_btn.setStyleSheet(AppStyles.button_success())
-        self.save_btn.clicked.connect(self.save_file)
-        row1.addWidget(self.save_btn)
-        
-        self.save_as_btn = QPushButton("💾 Зберегти як...")
-        self.save_as_btn.setEnabled(False)
-        self.save_as_btn.setStyleSheet(AppStyles.button_default())
-        self.save_as_btn.clicked.connect(self.save_file_as)
-        row1.addWidget(self.save_as_btn)
-        
-        # Кнопка парсингу адрес
-        self.parse_addresses_btn = QPushButton("🔧 Розпарсити адреси")
-        self.parse_addresses_btn.setEnabled(False)
-        self.parse_addresses_btn.setStyleSheet(AppStyles.button_warning(font_size="11px"))
-        self.parse_addresses_btn.clicked.connect(self.parse_visible_addresses)
-        self.parse_addresses_btn.setToolTip("Парсить адреси у неправильному форматі (тільки видимі рядки)")
-        row1.addWidget(self.parse_addresses_btn)
-        
-        # Undo/Redo
-        self.undo_btn = QPushButton("⏪ Відмінити")
-        self.undo_btn.setEnabled(False)
-        self.undo_btn.setStyleSheet(AppStyles.button_default())
-        self.undo_btn.clicked.connect(self.undo_action)
-        self.undo_btn.setToolTip("Відмінити останню дію (Ctrl+Z)")
-        row1.addWidget(self.undo_btn)
-        
-        self.redo_btn = QPushButton("Повторити ⏩")
-        self.redo_btn.setEnabled(False)
-        self.redo_btn.setStyleSheet(AppStyles.button_default())
-        self.redo_btn.clicked.connect(self.redo_action)
-        self.redo_btn.setToolTip("Повторити дію (Ctrl+Y)")
-        row1.addWidget(self.redo_btn)
-        
-        # Фільтр
-        filter_label = QLabel("Фільтр:")
-        filter_label.setStyleSheet("font-size: 10px; margin-left: 15px;")
-        row1.addWidget(filter_label)
-        
-        self.filter_combo = QComboBox()
-        self.filter_combo.addItems(["Всі", "Проставлено", "Непроставлено"])
-        self.filter_combo.currentTextChanged.connect(self.apply_filter)
-        self.filter_combo.setStyleSheet(AppStyles.combo_box())
-        row1.addWidget(self.filter_combo)
-        
-        # Оновити кеш
-        refresh_cache_btn = QPushButton("🔄 Оновити кеш")
-        refresh_cache_btn.setStyleSheet(AppStyles.button_warning(font_size="11px"))
-        refresh_cache_btn.clicked.connect(self.refresh_cache)
-        refresh_cache_btn.setToolTip("Оновити кеш magistral.csv")
-        row1.addWidget(refresh_cache_btn)
-        
-        # Чекбокс збереження старого індексу
-        self.save_old_index_checkbox = QCheckBox("Зберігати старий індекс")
-        self.save_old_index_checkbox.setChecked(False)
-        self.save_old_index_checkbox.setStyleSheet("font-size: 10px;")
-        row1.addWidget(self.save_old_index_checkbox)
-        
-        row1.addStretch()
-        layout.addLayout(row1)
-        
-        panel.setLayout(layout)
-        return panel
-    
-    def _create_table_panel(self):
-        """Панель з таблицею"""
-        panel = QWidget()
-        layout = QVBoxLayout()
-        layout.setSpacing(3)
-        layout.setContentsMargins(0, 0, 0, 0)
-        
-        # Заголовок
-        header = QHBoxLayout()
-        
-        label = QLabel("📋 База даних")
-        label.setStyleSheet(AppStyles.panel_header())
-        header.addWidget(label)
-        
-        # Навігація
-        nav_btn_prev = QPushButton("◀ Попередній")
-        nav_btn_prev.clicked.connect(self.go_to_previous_row)
-        nav_btn_prev.setStyleSheet(AppStyles.button_default(font_size="10px"))
-        header.addWidget(nav_btn_prev)
-        
-        nav_btn_next = QPushButton("Наступний ▶")
-        nav_btn_next.clicked.connect(self.go_to_next_row)
-        nav_btn_next.setStyleSheet(AppStyles.button_default(font_size="10px"))
-        header.addWidget(nav_btn_next)
-        
-        # Розмір шрифту
-        font_label = QLabel("Шрифт:")
-        font_label.setStyleSheet("font-size: 10px; margin-left: 10px;")
-        header.addWidget(font_label)
-        
-        self.table_font_spinbox = QSpinBox()
-        self.table_font_spinbox.setMinimum(8)
-        self.table_font_spinbox.setMaximum(16)
-        self.table_font_spinbox.setValue(10)
-        self.table_font_spinbox.setSuffix(" px")
-        self.table_font_spinbox.setStyleSheet("font-size: 10px; padding: 2px;")
-        self.table_font_spinbox.valueChanged.connect(self.update_table_font_size)
-        header.addWidget(self.table_font_spinbox)
-        
-        header.addStretch()
-        
-        # Кнопки обробки
-        self.search_btn = QPushButton("🔍 Знайти (Enter)")
-        self.search_btn.setEnabled(False)
-        self.search_btn.setStyleSheet(AppStyles.button_primary())
-        self.search_btn.clicked.connect(self.search_address)
-        header.addWidget(self.search_btn)
-        
-        self.auto_process_btn = QPushButton("⚡ Автоматична")
-        self.auto_process_btn.setEnabled(False)
-        self.auto_process_btn.setStyleSheet(AppStyles.button_warning())
-        self.auto_process_btn.clicked.connect(self.start_auto_processing)
-        header.addWidget(self.auto_process_btn)
-        
-        self.semi_auto_btn = QPushButton("🔄 Напів-авто")
-        self.semi_auto_btn.setEnabled(False)
-        self.semi_auto_btn.setStyleSheet("background-color: #9C27B0; color: white; padding: 6px 12px; font-size: 11px;")
-        self.semi_auto_btn.clicked.connect(self.start_semi_auto_processing)
-        header.addWidget(self.semi_auto_btn)
-        
-        layout.addLayout(header)
-        
-        # Таблиця
-        self.table = QTableWidget()
-        self.table.setStyleSheet(AppStyles.table_main())
-        self.table.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.table.itemChanged.connect(self.on_cell_edited)
-        self.table.itemSelectionChanged.connect(self.on_row_selected)
-        self.setup_table_sorting()
-        layout.addWidget(self.table)
-        
-        # Панель оригінальних даних
-        self.original_data_label = QLabel("Оберіть рядок для перегляду даних")
-        self.original_data_label.setStyleSheet(AppStyles.original_data_label())
-        self.original_data_label.setWordWrap(True)
-        self.original_data_label.setMaximumHeight(60)
-        layout.addWidget(self.original_data_label)
-        
-        panel.setLayout(layout)
-        return panel
+    def _connect_top_panel_signals(self):
+        """Підключає сигнали верхньої панелі"""
+        self.top_panel.load_file_clicked.connect(self.load_file)
+        self.top_panel.save_file_clicked.connect(self.save_file)
+        self.top_panel.save_as_clicked.connect(self.save_file_as)
+        self.top_panel.configure_columns_clicked.connect(self.configure_columns)
+        self.top_panel.parse_addresses_clicked.connect(self.parse_visible_addresses)
+        self.top_panel.undo_clicked.connect(self.undo_action)
+        self.top_panel.redo_clicked.connect(self.redo_action)
+        self.top_panel.refresh_cache_clicked.connect(self.refresh_cache)
+        self.top_panel.filter_changed.connect(self.apply_filter)
+
+    def _connect_table_panel_signals(self):
+        """Підключає сигнали панелі таблиці"""
+        self.table_panel.prev_row_clicked.connect(self.go_to_previous_row)
+        self.table_panel.next_row_clicked.connect(self.go_to_next_row)
+        self.table_panel.search_clicked.connect(self.search_address)
+        self.table_panel.auto_process_clicked.connect(self.start_auto_processing)
+        self.table_panel.semi_auto_clicked.connect(self.start_semi_auto_processing)
+        self.table_panel.font_size_changed.connect(self.update_table_font_size)
+        self.table_panel.row_selected.connect(self.on_row_selected)
+        self.table_panel.cell_edited.connect(self.on_cell_edited)
+        self.table_panel.header_clicked.connect(self.on_header_clicked)
     
     def _create_right_panel(self):
         """Права панель"""
@@ -427,13 +251,11 @@ class MainWindow(QMainWindow):
         
         return panel
         
-    def on_header_clicked(self):
+    def on_header_clicked(self, column_idx):
         """Обробка кліку на заголовок колонки"""
-        header = self.sender()
-        if header:
-            column_idx = self.table.horizontalHeader().visualIndexAt(header.x())
-            if column_idx >= 0:
-                column_name = self.file_manager.excel_handler.df.columns[column_idx]
+        # header = self.sender() # Вже не потрібно, отримуємо індекс напряму
+        if column_idx >= 0:
+            column_name = self.file_manager.excel_handler.df.columns[column_idx]
                 
                 # Визначаємо напрямок сортування
                 ascending = self.current_sort_order != 'asc'
@@ -491,19 +313,9 @@ class MainWindow(QMainWindow):
         """
         Оновлює візуальний індикатор сортування в заголовку
         """
-        header = self.table.horizontalHeader()
+        self.table_panel.update_header_sort_indicator(column_index, order)
         
-        # Очищаємо всі індикатори
-        for i in range(self.table.columnCount()):
-            header_text = self.table.horizontalHeaderItem(i).text()
-            # Видаляємо стрілки якщо є
-            header_text = header_text.replace(' ▲', '').replace(' ▼', '')
-            self.table.horizontalHeaderItem(i).setText(header_text)
-        
-        # Додаємо індикатор до поточної колонки
-        header_text = self.table.horizontalHeaderItem(column_index).text()
-        arrow = ' ▲' if order == 'asc' else ' ▼'
-        self.table.horizontalHeaderItem(column_index).setText(header_text + arrow)
+
     
     # ==================== СИГНАЛИ ТА КОЛБЕКИ ====================
     
@@ -577,17 +389,17 @@ class MainWindow(QMainWindow):
     
     def _on_file_loaded_signal(self, file_path: str):
         """Обробка сигналу завантаження файлу"""
-        self.file_label.setText(os.path.basename(file_path))
+        self.top_panel.set_file_name(os.path.basename(file_path))
         
         # Активуємо кнопки
         buttons = {
-            'column_mapping': self.column_mapping_btn,
-            'save': self.save_btn,
-            'save_as': self.save_as_btn,
-            'search': self.search_btn,
-            'auto_process': self.auto_process_btn,
-            'semi_auto': self.semi_auto_btn,
-            'parse_addresses': self.parse_addresses_btn  # ДОДАНО
+            'column_mapping': self.top_panel.column_mapping_btn,
+            'save': self.top_panel.save_btn,
+            'save_as': self.top_panel.save_as_btn,
+            'search': self.table_panel.search_btn,
+            'auto_process': self.table_panel.auto_process_btn,
+            'semi_auto': self.table_panel.semi_auto_btn,
+            'parse_addresses': self.top_panel.parse_addresses_btn
         }
         self.ui_state.enable_buttons_for_file_loaded(buttons)
         
@@ -602,11 +414,11 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(True)
         
         buttons = {
-            'search': self.search_btn,
-            'auto_process': self.auto_process_btn,
-            'semi_auto': self.semi_auto_btn,
-            'column_mapping': self.column_mapping_btn,
-            'save': self.save_btn
+            'search': self.table_panel.search_btn,
+            'auto_process': self.table_panel.auto_process_btn,
+            'semi_auto': self.table_panel.semi_auto_btn,
+            'column_mapping': self.top_panel.column_mapping_btn,
+            'save': self.top_panel.save_btn
         }
         self.ui_state.disable_buttons_for_processing(buttons)
         
@@ -622,11 +434,11 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         
         buttons = {
-            'search': self.search_btn,
-            'auto_process': self.auto_process_btn,
-            'semi_auto': self.semi_auto_btn,
-            'column_mapping': self.column_mapping_btn,
-            'save': self.save_btn
+            'search': self.table_panel.search_btn,
+            'auto_process': self.table_panel.auto_process_btn,
+            'semi_auto': self.table_panel.semi_auto_btn,
+            'column_mapping': self.top_panel.column_mapping_btn,
+            'save': self.top_panel.save_btn
         }
         self.ui_state.enable_buttons_after_processing(buttons)
         
@@ -638,8 +450,8 @@ class MainWindow(QMainWindow):
     
     def _on_undo_redo_changed_signal(self):
         """Обробка зміни стану Undo/Redo"""
-        self.undo_btn.setEnabled(self.undo_manager.can_undo())
-        self.redo_btn.setEnabled(self.undo_manager.can_redo())
+        self.top_panel.undo_btn.setEnabled(self.undo_manager.can_undo())
+        self.top_panel.redo_btn.setEnabled(self.undo_manager.can_redo())
     
     def _on_progress_update(self, current: int, total: int):
         """Колбек оновлення прогресу"""
@@ -650,7 +462,7 @@ class MainWindow(QMainWindow):
         self.status_bar.setText(f"⏳ Обробка {current}/{total} ({percent}%)...")
         
         # Прокручуємо до активного рядка
-        if current - 1 < self.table.rowCount():
+        if current - 1 < self.table_panel.table.rowCount():
             self.scroll_to_row(current - 1)
     
     def _on_row_processed(self, row_idx: int, index: str):
@@ -658,7 +470,7 @@ class MainWindow(QMainWindow):
         mapping = self.file_manager.excel_handler.column_mapping
         if mapping and 'index' in mapping:
             idx_col = mapping['index'][0]
-            item = self.table.item(row_idx, idx_col)
+            item = self.table_panel.table.item(row_idx, idx_col)
             if item:
                 item.setText(index)
                 item.setForeground(QColor(AppStyles.Colors.INDEX_APPLIED))
@@ -669,7 +481,7 @@ class MainWindow(QMainWindow):
     def _on_semi_auto_pause(self, row_idx: int, results: list):
         """Колбек паузи напівавтоматичної обробки"""
         self.current_row = row_idx
-        self.table.selectRow(row_idx)
+        self.table_panel.table.selectRow(row_idx)
         self.scroll_to_row(row_idx)
         
         # Показуємо результати
@@ -709,7 +521,7 @@ class MainWindow(QMainWindow):
     
     def save_file(self):
         """Збереження файлу через FileManager"""
-        save_old_index = self.save_old_index_checkbox.isChecked()
+        save_old_index = self.top_panel.is_save_old_index_checked()
         
         success = self.file_manager.save_file(
             save_old_index=save_old_index,
@@ -728,7 +540,7 @@ class MainWindow(QMainWindow):
         if not file_path:
             return
         
-        save_old_index = self.save_old_index_checkbox.isChecked()
+        save_old_index = self.top_panel.is_save_old_index_checked()
         
         success = self.file_manager.save_file(
             file_path=file_path,
@@ -831,7 +643,7 @@ class MainWindow(QMainWindow):
             self.file_manager.excel_handler.df.iloc[self.current_row, idx_col] = index
             
             # ОНОВЛЮЄМО ТАБЛИЦЮ
-            item = self.table.item(self.current_row, idx_col)
+            item = self.table_panel.table.item(self.current_row, idx_col)
             if item:
                 item.setText(index)
                 item.setForeground(QColor(76, 175, 80))  # Зелений!
@@ -882,20 +694,20 @@ class MainWindow(QMainWindow):
             self.status_bar.setText(f"✅ Застосовано індекс {index}")
             
             # ✅ ПЕРЕХОДИМО НА НАСТУПНИЙ РЯДОК ПРАВИЛЬНО
-            if next_row < self.table.rowCount():
+            if next_row < self.table_panel.table.rowCount():
                 try:
                     # ВІДКЛЮЧАЄМО СИГНАЛ ДО ВИБОРУ
-                    self.table.itemSelectionChanged.disconnect()
+                    self.table_panel.table.itemSelectionChanged.disconnect()
                 except:
                     pass
                 
                 # ВИБИРАЄМО РЯДОК
-                self.table.selectRow(next_row)
+                self.table_panel.table.selectRow(next_row)
                 self.scroll_to_row(next_row)
                 self.current_row = next_row
                 
                 # ПОДАЄМО СИГНАЛ ВРУЧНУ
-                self.table.itemSelectionChanged.connect(self.on_row_selected)
+                self.table_panel.table.itemSelectionChanged.connect(self.on_row_selected)
                 self.logger.info(f"➡️ Перехід на рядок {next_row + 1}")
                 
                 # ✅ ДОДАНО: АВТОМАТИЧНИЙ ПОШУК НА НОВОМУ РЯДКУ
