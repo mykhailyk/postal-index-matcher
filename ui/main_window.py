@@ -849,14 +849,14 @@ class MainWindow(QMainWindow):
 
     def scroll_to_row(self, row_idx: int):
         """Скролює таблицю до конкретного рядка"""
-        if 0 <= row_idx < self.table.rowCount():
+        if 0 <= row_idx < self.table_panel.table.rowCount():
             # Скролює та центрує рядок на екрані
-            self.table.scrollToItem(
-                self.table.item(row_idx, 0),
+            self.table_panel.table.scrollToItem(
+                self.table_panel.table.item(row_idx, 0),
                 QAbstractItemView.PositionAtCenter
             )
             # Виділяємо рядок
-            self.table.setCurrentCell(row_idx, 0)
+            self.table_panel.table.setCurrentCell(row_idx, 0)
 
 
 
@@ -899,7 +899,7 @@ class MainWindow(QMainWindow):
         mapping = self.file_manager.excel_handler.column_mapping
         if mapping and 'index' in mapping:
             idx_col = mapping['index'][0]
-            item = self.table.item(row_idx, idx_col)
+            item = self.table_panel.table.item(row_idx, idx_col)
             if item:
                 item.setText(index)
                 # Зелений колір для автопідстановки
@@ -944,7 +944,7 @@ class MainWindow(QMainWindow):
         Колбек коли напівавтоматична обробка зупинилась для ручного вибору
         """
         # Прокручуємо до рядка
-        self.table.selectRow(row_idx)
+        self.table_panel.table.selectRow(row_idx)
         self.scroll_to_row(row_idx)
         self.current_row = row_idx
         
@@ -1001,7 +1001,7 @@ class MainWindow(QMainWindow):
                 self.file_manager.excel_handler.df.iloc[row_idx, idx_col] = old_index
                 
                 # ✅ ОНОВЛЮЄМО КЛІТИНКУ В ТАБЛИЦІ
-                item = self.table.item(row_idx, idx_col)
+                item = self.table_panel.table.item(row_idx, idx_col)
                 if item:
                     item.setText(old_index)
                     
@@ -1047,7 +1047,7 @@ class MainWindow(QMainWindow):
                 self.file_manager.excel_handler.df.iloc[row_idx, idx_col] = new_index
                 
                 # ✅ ОНОВЛЮЄМО КЛІТИНКУ В ТАБЛИЦІ
-                item = self.table.item(row_idx, idx_col)
+                item = self.table_panel.table.item(row_idx, idx_col)
                 if item:
                     item.setText(new_index)
                     
@@ -1159,13 +1159,13 @@ class MainWindow(QMainWindow):
         print(f"Колонка 'Будинок': {building_col}")
         print("="*80 + "\n")
         
-        for visual_row in range(self.table.rowCount()):
+        for visual_row in range(self.table_panel.table.rowCount()):
             # Пропускаємо приховані рядки (відфільтровані)
-            if self.table.isRowHidden(visual_row):
+            if self.table_panel.table.isRowHidden(visual_row):
                 continue
             
             # Отримуємо значення з таблиці
-            street_item = self.table.item(visual_row, street_col)
+            street_item = self.table_panel.table.item(visual_row, street_col)
             if not street_item:
                 continue
             
@@ -1197,7 +1197,7 @@ class MainWindow(QMainWindow):
                 if city_col is not None and parsed['city']:
                     old_city = df.iloc[visual_row, city_col] if pd.notna(df.iloc[visual_row, city_col]) else ""
                     df.iloc[visual_row, city_col] = parsed['city']
-                    city_item = self.table.item(visual_row, city_col)
+                    city_item = self.table_panel.table.item(visual_row, city_col)
                     if city_item:
                         city_item.setText(parsed['city'])
                     print(f"   📝 Місто: '{old_city}' → '{parsed['city']}'")
@@ -1212,7 +1212,7 @@ class MainWindow(QMainWindow):
                 if building_col is not None and parsed['building']:
                     old_building = df.iloc[visual_row, building_col] if pd.notna(df.iloc[visual_row, building_col]) else ""
                     df.iloc[visual_row, building_col] = parsed['building']
-                    building_item = self.table.item(visual_row, building_col)
+                    building_item = self.table_panel.table.item(visual_row, building_col)
                     if building_item:
                         building_item.setText(parsed['building'])
                     print(f"   📝 Будинок: '{old_building}' → '{parsed['building']}'")
@@ -1278,10 +1278,10 @@ class MainWindow(QMainWindow):
         if df is None or df.empty:
             return
         
-        self.table.blockSignals(True)
+        self.table_panel.table.blockSignals(True)
         
-        self.table.setRowCount(len(df))
-        self.table.setColumnCount(len(df.columns))
+        self.table_panel.table.setRowCount(len(df))
+        self.table_panel.table.setColumnCount(len(df.columns))
         
         # Заголовки
         header_labels = []
@@ -1292,7 +1292,7 @@ class MainWindow(QMainWindow):
             else:
                 header_labels.append(str(db_col))
         
-        self.table.setHorizontalHeaderLabels(header_labels)
+        self.table_panel.table.setHorizontalHeaderLabels(header_labels)
         
         # Заповнюємо дані
         for i in range(len(df)):
@@ -1305,18 +1305,19 @@ class MainWindow(QMainWindow):
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                     item.setBackground(QColor(240, 240, 240))
                 
-                self.table.setItem(i, j, item)
+                self.table_panel.table.setItem(i, j, item)
         
         # Відновлюємо ширини стовпців
         saved_widths = SettingsManager.get_column_widths()
         if saved_widths and len(saved_widths) == len(df.columns):
             for i, width in enumerate(saved_widths):
-                self.table.setColumnWidth(i, width)
+                self.table_panel.table.setColumnWidth(i, width)
         else:
-            self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
-            self.table.resizeColumnsToContents()
+            self.table_panel.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+            if len(df) > 0:
+                self.table_panel.table.resizeColumnsToContents()
         
-        self.table.blockSignals(False)
+        self.table_panel.table.blockSignals(False)
     
     def _get_our_field_name_for_column(self, col_idx):
         """Повертає назву поля для відображення в заголовку"""
@@ -1348,7 +1349,7 @@ class MainWindow(QMainWindow):
     
     def on_row_selected(self):
         """Обробка вибору рядка"""
-        selected_rows = self.table.selectionModel().selectedRows()
+        selected_rows = self.table_panel.table.selectionModel().selectedRows()
         
         if not selected_rows:
             self.search_btn.setEnabled(False)
@@ -1437,9 +1438,9 @@ class MainWindow(QMainWindow):
         
         idx_col = index_cols[0]
         
-        for row in range(self.table.rowCount()):
+        for row in range(self.table_panel.table.rowCount()):
             try:
-                index_item = self.table.item(row, idx_col)
+                index_item = self.table_panel.table.item(row, idx_col)
                 
                 if index_item:
                     text_color = index_item.foreground().color()
@@ -1458,25 +1459,25 @@ class MainWindow(QMainWindow):
                 else:  # "Всі"
                     show = True
                 
-                self.table.setRowHidden(row, not show)
+                self.table_panel.table.setRowHidden(row, not show)
                 
             except Exception as e:
                 self.logger.error(f"Помилка фільтра рядка {row}: {e}")
-                self.table.setRowHidden(row, False)
+                self.table_panel.table.setRowHidden(row, False)
                 continue
         
-        visible_count = sum(1 for row in range(self.table.rowCount()) if not self.table.isRowHidden(row))
-        self.status_bar.setText(f"Фільтр '{filter_type}': показано {visible_count} з {self.table.rowCount()} рядків")
+        visible_count = sum(1 for row in range(self.table_panel.table.rowCount()) if not self.table_panel.table.isRowHidden(row))
+        self.status_bar.setText(f"Фільтр '{filter_type}': показано {visible_count} з {self.table_panel.table.rowCount()} рядків")
     
     def update_table_font_size(self, size):
         """Оновлює розмір шрифту таблиці"""
-        self.table.setStyleSheet(f"font-size: {size}px;")
+        self.table_panel.table.setStyleSheet(f"font-size: {size}px;")
     
     def scroll_to_row(self, row):
         """Прокручує таблицю до рядка"""
-        if row >= 0 and row < self.table.rowCount():
-            self.table.scrollToItem(
-                self.table.item(row, 0),
+        if row >= 0 and row < self.table_panel.table.rowCount():
+            self.table_panel.table.scrollToItem(
+                self.table_panel.table.item(row, 0),
                 QAbstractItemView.PositionAtCenter
             )
     
@@ -1486,7 +1487,7 @@ class MainWindow(QMainWindow):
         """Перехід на попередній рядок"""
         if self.current_row > 0:
             prev_row = self.current_row - 1
-            self.table.selectRow(prev_row)
+            self.table_panel.table.selectRow(prev_row)
             self.scroll_to_row(prev_row)
             self.current_row = prev_row
         else:
@@ -1494,9 +1495,9 @@ class MainWindow(QMainWindow):
     
     def go_to_next_row(self):
         """Перехід на наступний рядок"""
-        if self.current_row < self.table.rowCount() - 1:
+        if self.current_row < self.table_panel.table.rowCount() - 1:
             next_row = self.current_row + 1
-            self.table.selectRow(next_row)
+            self.table_panel.table.selectRow(next_row)
             self.scroll_to_row(next_row)
             self.current_row = next_row
         else:
@@ -1524,7 +1525,7 @@ class MainWindow(QMainWindow):
     def on_semi_auto_pause(self, row_idx: int, results: List[Dict]):
         """Пауза напівавто"""
         self.current_row = row_idx
-        self.table.selectRow(row_idx)
+        self.table_panel.table.selectRow(row_idx)
         self.scroll_to_row(row_idx)
         
         if results:
