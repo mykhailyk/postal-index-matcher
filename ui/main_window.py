@@ -257,27 +257,27 @@ class MainWindow(QMainWindow):
         if column_idx >= 0:
             column_name = self.file_manager.excel_handler.df.columns[column_idx]
                 
-                # Визначаємо напрямок сортування
-                ascending = self.current_sort_order != 'asc'
+            # Визначаємо напрямок сортування
+            ascending = self.current_sort_order != 'asc'
+            
+            # ✅ СОРТУЄМО НАПРЯМУ В DATAFRAME
+            try:
+                self.file_manager.excel_handler.df.sort_values(
+                    by=column_name, 
+                    ascending=ascending, 
+                    inplace=True
+                )
+                self.file_manager.excel_handler.df.reset_index(drop=True, inplace=True)
                 
-                # ✅ СОРТУЄМО НАПРЯМУ В DATAFRAME
-                try:
-                    self.file_manager.excel_handler.df.sort_values(
-                        by=column_name, 
-                        ascending=ascending, 
-                        inplace=True
-                    )
-                    self.file_manager.excel_handler.df.reset_index(drop=True, inplace=True)
-                    
-                    # Перемикаємо напрямок
-                    self.current_sort_order = 'asc' if ascending else 'desc'
-                    
-                    # Оновлюємо таблицю
-                    self._display_table()
-                    
-                    self.logger.info(f"✅ Сортування по '{column_name}' - {self.current_sort_order}")
-                except Exception as e:
-                    self.logger.error(f"❌ Помилка сортування: {e}")
+                # Перемикаємо напрямок
+                self.current_sort_order = 'asc' if ascending else 'desc'
+                
+                # Оновлюємо таблицю
+                self._display_table()
+                
+                self.logger.info(f"✅ Сортування по '{column_name}' - {self.current_sort_order}")
+            except Exception as e:
+                self.logger.error(f"❌ Помилка сортування: {e}")
         
     def sort_dataframe(self, column_name, order='asc'):
         """
