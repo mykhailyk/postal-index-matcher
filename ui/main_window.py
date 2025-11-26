@@ -754,8 +754,8 @@ class MainWindow(QMainWindow):
         self.logger.info(f"   Мінімальна точність: {min_confidence}%")
         self.logger.info("=" * 80)
         
-        self.auto_process_btn.setEnabled(False)
-        self.semi_auto_btn.setEnabled(False)
+        self.table_panel.auto_process_btn.setEnabled(False)
+        self.table_panel.semi_auto_btn.setEnabled(False)
         self.progress_bar.setVisible(True)
         
         df = self.file_manager.excel_handler.df
@@ -1259,8 +1259,8 @@ class MainWindow(QMainWindow):
         if not self.processing_manager.semi_auto_waiting:
             self._show_processing_statistics(stats)
             self.progress_bar.setVisible(False)
-            self.semi_auto_btn.setEnabled(True)
-            self.auto_process_btn.setEnabled(True)
+            self.table_panel.semi_auto_btn.setEnabled(True)
+            self.table_panel.auto_process_btn.setEnabled(True)
 
     
     def set_index_star(self):
@@ -1352,12 +1352,17 @@ class MainWindow(QMainWindow):
         selected_rows = self.table_panel.table.selectionModel().selectedRows()
         
         if not selected_rows:
-            self.search_btn.setEnabled(False)
+            self.table_panel.search_btn.setEnabled(False)
+            self.table_panel.auto_process_btn.setEnabled(False)
+            self.table_panel.semi_auto_btn.setEnabled(False)
             return
         
         self.current_row = selected_rows[0].row()
         self.ui_state.set_current_row(self.current_row)
-        self.search_btn.setEnabled(True)
+        # Активуємо кнопки
+        self.table_panel.search_btn.setEnabled(True)
+        self.table_panel.auto_process_btn.setEnabled(True)
+        self.table_panel.semi_auto_btn.setEnabled(True)
         self.results_panel.clear()
         
         # Відображаємо оригінальні дані
