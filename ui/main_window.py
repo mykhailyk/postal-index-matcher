@@ -1383,7 +1383,7 @@ class MainWindow(QMainWindow):
                 parts.append(f"Будинок: {address.building}")
             
             text = " | ".join(parts) if parts else "Немає даних"
-            self.original_data_label.setText(f"📋 Оригінальні дані: {text}")
+            self.table_panel.original_data_label.setText(f"📋 Оригінальні дані: {text}")
             
             # ✅ ДОДАНО: ЗАПОВНЮЄМО ФОРМУ РУЧНОГО ВВЕДЕННЯ
             self.address_panel.region_input.setText(address.region or '')
