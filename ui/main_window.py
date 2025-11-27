@@ -170,9 +170,66 @@ class MainWindow(QMainWindow):
         # Прогрес бар
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
-        self.progress_bar.setStyleSheet(AppStyles.progress_bar())
+        self.progress_bar.setStyleSheet("max-width: 200px;")
+        # Note: QLabel does not have addPermanentWidget. This is typically for QStatusBar.
+        # We need to adjust the layout to place progress bar and stop button next to the QLabel.
+        # Let's create a QHBoxLayout for the status bar content.
+        
+        status_content_layout = QHBoxLayout()
+        status_content_layout.setContentsMargins(0, 0, 0, 0)
+        status_content_layout.addWidget(self.status_bar, 1) # Stretch factor 1 for the label
+        
+        self.progress_bar.setMaximumHeight(20) # Keep original height setting
+        status_content_layout.addWidget(self.progress_bar)
+        
+        # 🛑 КНОПКА СТОП (біля прогрес бару)
+        self.stop_btn = QPushButton("⏹️ Стоп")
+        self.stop_btn.setVisible(False)
+        self.stop_btn.setStyleSheet("background-color: #F44336; color: white; font-weight: bold; padding: 2px 8px;")
+        self.stop_btn.clicked.connect(self.stop_auto_processing)
+        status_content_layout.addWidget(self.stop_btn)
+        
+        # Add the new status_content_layout to the main status_layout
+        # First, remove the old status_bar from status_layout if it was added directly
+        # Since it was added, we need to replace it or wrap it.
+        # The instruction implies adding to status_bar, but QLabel doesn't support it.
+        # The most faithful interpretation while maintaining syntactical correctness is to
+        # wrap the status_bar, progress_bar, and stop_btn in a new QHBoxLayout
+        # and add that QHBoxLayout to the status_layout.
+        
+        # Remove the original status_bar from status_layout to re-add it with others
+        # This is a bit tricky as status_layout.addWidget(self.status_bar) was already executed.
+        # A better approach is to create the status_bar_content_layout and add it to status_layout.
+        
+        # Re-creating status_container and status_layout to correctly place widgets
+        status_container = QWidget()
+        status_layout = QVBoxLayout(status_container) # Set layout directly to container
+        status_layout.setSpacing(2)
+        status_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Create a horizontal layout for the actual status line
+        status_line_layout = QHBoxLayout()
+        status_line_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.status_bar = QLabel("Готово до роботи")
+        self.status_bar.setStyleSheet(AppStyles.status_bar())
+        self.status_bar.setMinimumHeight(25)
+        self.status_bar.setMaximumHeight(60)
+        status_line_layout.addWidget(self.status_bar, 1) # Stretch factor 1 for the label
+        
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setStyleSheet("max-width: 200px;")
         self.progress_bar.setMaximumHeight(20)
-        status_layout.addWidget(self.progress_bar)
+        status_line_layout.addWidget(self.progress_bar)
+        
+        self.stop_btn = QPushButton("⏹️ Стоп")
+        self.stop_btn.setVisible(False)
+        self.stop_btn.setStyleSheet("background-color: #F44336; color: white; font-weight: bold; padding: 2px 8px;")
+        self.stop_btn.clicked.connect(self.stop_auto_processing)
+        status_line_layout.addWidget(self.stop_btn)
+        
+        status_layout.addLayout(status_line_layout) # Add the horizontal layout to the vertical status_layout
         
         vertical_splitter.addWidget(status_container)
         
@@ -762,6 +819,10 @@ class MainWindow(QMainWindow):
         self.table_panel.semi_auto_btn.setEnabled(False)
         self.progress_bar.setVisible(True)
         
+        # 🛑 ПОКАЗУЄМО КНОПКУ СТОП
+        self.stop_btn.setVisible(True)
+        self._stop_requested = False
+        
         df = self.file_manager.excel_handler.df
         total_rows = len(df)
         
@@ -777,6 +838,12 @@ class MainWindow(QMainWindow):
         try:
             for idx in range(start_row, total_rows):
                 self.current_row = idx
+                
+                # 🛑 ПЕРЕВІРКА ЗУПИНКИ
+                if self._stop_requested:
+                    self.logger.info("🛑 Автоматична обробка зупинена користувачем")
+                    self.status_bar.setText("🛑 Зупинено користувачем")
+                    break
                 
                 if stats['total'] > 0:
                     progress_pct = int((idx - start_row) / stats['total'] * 100)
@@ -846,10 +913,17 @@ class MainWindow(QMainWindow):
         
         finally:
             self.progress_bar.setVisible(False)
+            self.stop_btn.setVisible(False)  # Ховаємо кнопку стоп
             self.table_panel.auto_process_btn.setEnabled(True)
             self.table_panel.semi_auto_btn.setEnabled(True)
             # ✅ НЕ вивантажуймо всю таблицю!
             # Лише оновлюємо розміри
+            
+    def stop_auto_processing(self):
+        """Зупиняє автоматичну обробку"""
+        self._stop_requested = True
+        self.status_bar.setText("🛑 Зупинка...")
+        self.logger.info("🛑 Отримано запит на зупинку...")
 
     def scroll_to_row(self, row_idx: int):
         """Скролює таблицю до конкретного рядка"""
