@@ -23,13 +23,17 @@ class ExcelHandler:
     def load_file(self, file_path: str) -> pd.DataFrame:
         """Завантажує Excel файл з ЗБЕРЕЖЕННЯМ НУЛІВ"""
         try:
-            # ✅ ЧИТАЄМО ВСІ КОЛОНИ ЯК ТЕКСТ
+            # ✅ ЧИТАЄМО З АВТОМАТИЧНИМ ВИЗНАЧЕННЯМ ТИПІВ
+            # Це важливо, щоб числа залишалися числами (0,444 -> float), а не ставали рядками з крапкою ("0.444")
             self.df = pd.read_excel(
                 file_path,
-                dtype=str,  # ✅ ВСІ ПОЛЯ - ТЕКСТ!
-                keep_default_na=False,  # ✅ НЕ перетворюємо 'NA' на NaN
-                na_values=[]  # ✅ НІЧ НЕ вважаємо за NaN
+                dtype=None,  # Автоматичні типи
+                keep_default_na=False,
+                na_values=['']  # Тільки пусті рядки як NaN
             )
+            
+            # ✅ Замінюємо NaN на пусті рядки (для коректного відображення в UI)
+            self.df = self.df.fillna("")
             
             # ✅ ВИДАЛІТЬ ПУСТІ РЯДКИ
             self.df = self.df.dropna(how='all').reset_index(drop=True)
