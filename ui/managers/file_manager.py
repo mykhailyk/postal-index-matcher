@@ -232,8 +232,29 @@ class FileManager:
                 try:
                     import xlwt
                     df_to_save.to_excel(file_path, index=False, engine='xlwt')
-                except ImportError:
-                    self.logger.error("Модуль 'xlwt' не встановлено")
+                except (ImportError, ValueError) as e:
+                    self.logger.error(f"Помилка збереження XLS: {e}")
+                    
+                    if parent:
+                        reply = QMessageBox.question(
+                            parent, 
+                            "Помилка збереження XLS",
+                            "На жаль, збереження у застарілому форматі .xls не підтримується.\n"
+                            "Зберегти файл у новому форматі .xlsx?",
+                            QMessageBox.Yes | QMessageBox.No
+                        )
+                        
+                        if reply == QMessageBox.Yes:
+                            new_path = os.path.splitext(file_path)[0] + ".xlsx"
+                            df_to_save.to_excel(new_path, index=False, engine='openpyxl')
+                            self.logger.info(f"Файл збережено як XLSX: {new_path}")
+                            
+                            # Оновлюємо поточний файл якщо це він
+                            if file_path == self.current_file:
+                                self.current_file = new_path
+                                
+                            return True
+                    
                     return False
             else:
                 # XLSX формат

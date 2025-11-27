@@ -53,6 +53,3 @@ main_window_refactored_example.py
 # OS
 .DS_Store
 Thumbs.db
-
-# Інше
-requirements.txt
