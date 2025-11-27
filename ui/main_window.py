@@ -578,6 +578,9 @@ class MainWindow(QMainWindow):
                 # ✅ ІНІЦІАЛІЗУЄМО КОЛОНКУ "СТАРИЙ ІНДЕКС"
                 self.file_manager._initialize_old_index_column()
                 
+                # ✅ ЗАСТОСОВУЄМО ФІЛЬТР КОЛОНОК (ЗАЛИШАЄМО ТІЛЬКИ ПОТРІБНІ)
+                self.file_manager.excel_handler.apply_column_filter()
+                
                 # ✅ ОНОВЛЮЄМО ТАБЛИЦЮ
                 self._display_table()
             

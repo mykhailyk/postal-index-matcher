@@ -162,11 +162,55 @@ class FileManager:
             return False
         
         try:
-            df_to_save = self.excel_handler.df.copy()
+            # ✅ SMART SAVE: Якщо є оригінал - мержимо зміни
+            if self.excel_handler.original_df is not None:
+                self.logger.info("🔄 Виконується SMART SAVE (злиття з оригіналом)...")
+                
+                # 1. Читаємо оригінальний файл з диска (щоб мати всі дані)
+                # Або використовуємо self.excel_handler.original_df, але краще свіжий
+                df_to_save = self.excel_handler.original_df.copy()
+                
+                # 2. Проходимо по відфільтрованому (і можливо відсортованому) df
+                filtered_df = self.excel_handler.df
+                
+                # Перевіряємо наявність колонки зв'язку
+                if '_original_row_index' not in filtered_df.columns:
+                    self.logger.warning("⚠️ Немає _original_row_index, зберігаємо як є")
+                    df_to_save = filtered_df.copy()
+                else:
+                    # 3. Оновлюємо дані в оригіналі
+                    # Нам цікаві тільки колонки, які ми змінювали (адреса, індекс)
+                    # Тобто ті, що є в filtered_df (крім _original_row_index)
+                    
+                    cols_to_update = [c for c in filtered_df.columns if c != '_original_row_index']
+                    
+                    # Створюємо мапу змін: {original_index: {col: value}}
+                    # Це швидше ніж iterrows
+                    
+                    # Перетворюємо filtered_df в словник для швидкості
+                    # index -> {col: val}
+                    # Але index у filtered_df може бути змінений сортуванням, тому використовуємо _original_row_index
+                    
+                    for _, row in filtered_df.iterrows():
+                        orig_idx = int(row['_original_row_index'])
+                        
+                        if orig_idx in df_to_save.index:
+                            for col in cols_to_update:
+                                val = row[col]
+                                df_to_save.at[orig_idx, col] = val
+                    
+                    self.logger.info("✅ Дані успішно об'єднані з оригіналом")
+            
+            else:
+                # Звичайне збереження (якщо не було фільтрації)
+                df_to_save = self.excel_handler.df.copy()
             
             # Видаляємо службові колонки
             if '_processed_by_us' in df_to_save.columns:
                 df_to_save = df_to_save.drop(columns=['_processed_by_us'])
+            
+            if '_original_row_index' in df_to_save.columns:
+                df_to_save = df_to_save.drop(columns=['_original_row_index'])
             
             # Видаляємо 'Старий індекс' якщо не потрібно
             if not save_old_index and 'Старий індекс' in df_to_save.columns:
