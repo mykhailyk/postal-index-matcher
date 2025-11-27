@@ -75,7 +75,7 @@ class AutoProcessingDialog(QDialog):
         self.confidence_spin.setStyleSheet("min-width: 80px;")
         confidence_layout.addWidget(self.confidence_spin)
         
-        info_label = QLabel("(50-100%, за замовчуванням 80%)")
+        info_label = QLabel("(50-100%, за замовчуванням 90%)")
         info_label.setStyleSheet("color: gray; font-style: italic;")
         confidence_layout.addWidget(info_label)
         

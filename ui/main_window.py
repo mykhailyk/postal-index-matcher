@@ -846,8 +846,8 @@ class MainWindow(QMainWindow):
         
         finally:
             self.progress_bar.setVisible(False)
-            self.auto_process_btn.setEnabled(True)
-            self.semi_auto_btn.setEnabled(True)
+            self.table_panel.auto_process_btn.setEnabled(True)
+            self.table_panel.semi_auto_btn.setEnabled(True)
             # ✅ НЕ вивантажуймо всю таблицю!
             # Лише оновлюємо розміри
 
