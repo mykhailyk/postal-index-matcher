@@ -609,9 +609,16 @@ class MainWindow(QMainWindow):
                 all_results = [auto_result] + result['manual_results']
                 self.results_panel.display_results(all_results, highlight_first=True)
                 self.status_bar.setText(f"✅ Автопідстановка: [{auto_result['index']}]")
+                
+                # ✅ ЗАПОВНЮЄМО ФОРМУ РУЧНОГО ВВЕДЕННЯ РЕЗУЛЬТАТОМ
+                self.address_panel.populate_from_results(all_results)
+                
             elif result['mode'] == 'manual':
                 self.results_panel.display_results(result['manual_results'], highlight_first=False)
                 self.status_bar.setText(f"⚠️ Знайдено {result['total_found']} варіантів")
+                
+                # ✅ ЗАПОВНЮЄМО ФОРМУ РУЧНОГО ВВЕДЕННЯ ТОП РЕЗУЛЬТАТОМ
+                self.address_panel.populate_from_results(result['manual_results'])
             else:
                 self.results_panel.clear()
                 self.status_bar.setText("❌ Нічого не знайдено")
