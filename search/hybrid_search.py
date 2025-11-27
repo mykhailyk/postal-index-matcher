@@ -72,6 +72,15 @@ class HybridSearch:
         """
         self._ensure_loaded()
         
+        # ============ 0. ПОПЕРЕДНЯ ОБРОБКА ============
+        # Спроба витягнути місто з вулиці, якщо місто не вказано
+        if not address.city and address.street:
+            extracted_city, cleaned_street = self.normalizer.try_extract_city(address.street)
+            if extracted_city:
+                self.logger.info(f"💡 Витягнуто місто з вулиці: '{extracted_city}' (вулиця: '{cleaned_street}')")
+                address.city = extracted_city
+                address.street = cleaned_street
+        
         # ============ СПЕЦІАЛЬНА ОБРОБКА: абонентська скринька ============
         if address.street and ('а/с' in address.street.lower() or 'п/с' in address.street.lower() or 'абонент' in address.street.lower()):
             if 'київ' in address.city.lower():
@@ -326,7 +335,8 @@ class HybridSearch:
         # ============ 2. ВУЛИЦЯ (35%) - ЖОРСТКИЙ ФІЛЬТР ============
         street_similarity = 0.0
         if query_street and record.normalized_street:
-            street_similarity = self.similarity.jaro_winkler_similarity(
+            # Використовуємо token_similarity для ігнорування порядку слів
+            street_similarity = self.similarity.token_similarity(
                 query_street, 
                 record.normalized_street
             )

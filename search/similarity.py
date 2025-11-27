@@ -168,3 +168,25 @@ class SimilarityCalculator:
             return SimilarityCalculator.jaro_winkler_similarity(s1, s2) * 0.5
         
         return SimilarityCalculator.jaro_winkler_similarity(consonants1, consonants2)
+    
+    @staticmethod
+    def token_similarity(s1: str, s2: str) -> float:
+        """
+        Схожість на основі токенів (слів)
+        Ігнорує порядок слів ("Шевченка Тараса" == "Тараса Шевченка")
+        """
+        if not s1 or not s2:
+            return 0.0
+            
+        # Розбиваємо на слова, сортуємо
+        tokens1 = sorted([t for t in s1.lower().split() if len(t) > 1])
+        tokens2 = sorted([t for t in s2.lower().split() if len(t) > 1])
+        
+        if not tokens1 or not tokens2:
+            return SimilarityCalculator.jaro_winkler_similarity(s1, s2)
+            
+        # Збираємо назад в рядки
+        sorted_s1 = " ".join(tokens1)
+        sorted_s2 = " ".join(tokens2)
+        
+        return SimilarityCalculator.jaro_winkler_similarity(sorted_s1, sorted_s2)

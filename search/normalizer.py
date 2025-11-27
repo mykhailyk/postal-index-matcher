@@ -23,6 +23,24 @@ class TextNormalizer:
             'ї': 'і',
             'є': 'є',
         }
+        
+        # Словник перейменувань (стара назва -> нова назва)
+        self.city_renames = {
+            'димитров': 'мирноград',
+            'красноармійськ': 'покровськ',
+            'артемівськ': 'бахмут',
+            'дніпропетровськ': 'дніпро',
+            'кіровоград': 'кропивницький',
+            'дніпродзержинськ': 'кам\'янське',
+            'новоград-волинський': 'звягель',
+            'володимир-волинський': 'володимир',
+            'переяслав-хмельницький': 'переяслав',
+            'іллічівськ': 'чорноморськ',
+            'комсомольськ': 'горішні плавні',
+            'кузнецовськ': 'вараш',
+            'южне': 'південне',
+            'червоноград': 'шептицький',
+        }
     
     def normalize_text(self, text: str) -> str:
         """
@@ -66,7 +84,13 @@ class TextNormalizer:
                 city = city[len(prefix):].strip()
                 break
         
-        return self.normalize_text(city)
+        normalized = self.normalize_text(city)
+        
+        # Перевірка перейменувань
+        if normalized in self.city_renames:
+            normalized = self.city_renames[normalized]
+            
+        return normalized
     
     def normalize_street(self, street: str) -> str:
         """Нормалізує назву вулиці"""
@@ -117,3 +141,38 @@ class TextNormalizer:
         consonants = ''.join([c for c in text if c.isalpha() and c not in vowels])
         
         return consonants
+        return consonants
+    
+    def try_extract_city(self, street: str) -> tuple[str, str]:
+        """
+        Спроба витягнути місто з поля вулиці
+        Повертає (знайдене_місто, очищена_вулиця)
+        """
+        if not street or ',' not in street:
+            return "", street
+            
+        parts = [p.strip() for p in street.split(',')]
+        
+        # Якщо перша частина схожа на місто
+        first_part = parts[0].lower()
+        
+        # Ознаки міста
+        is_city = False
+        
+        # 1. Явні префікси
+        for prefix in config.CITY_PREFIXES:
+            if first_part.startswith(prefix):
+                is_city = True
+                break
+                
+        # 2. Відомі великі міста (без префіксів)
+        known_cities = {'київ', 'харків', 'одеса', 'дніпро', 'львів', 'запоріжжя', 'кривий ріг', 'миколаїв'}
+        if self.normalize_text(first_part) in known_cities:
+            is_city = True
+            
+        if is_city:
+            city = parts[0]
+            clean_street = ", ".join(parts[1:])
+            return city, clean_street
+            
+        return "", street
