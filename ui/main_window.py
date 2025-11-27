@@ -105,26 +105,8 @@ class MainWindow(QMainWindow):
         self._setup_callbacks()
         self._setup_shortcuts()
         
-        # Кеш вже завантажений в main.py
-        self.logger.info("=== ПОЧАТОК ЗАВАНТАЖЕННЯ UKRPOSHTA CACHE ===")
-
-        # ВИКЛИКАЄМО _ensure_loaded() щоб завантажити дані
-        self.search_manager.search_engine._ensure_loaded()
-
-        records = self.search_manager.get_magistral_records()
-        self.logger.info(f"Отримано {len(records) if records else 0} записів")
-
-        if records and self.address_panel:
-            self.logger.info(f"Передаємо {len(records):,} записів в AddressSelectorPanel...")
-            print(f"\n📦 Передаємо {len(records):,} записів в AddressSelectorPanel...")
-            self.address_panel.set_magistral_cache(records)
-            self.logger.info("AddressSelectorPanel ініціалізовано")
-            print("✅ AddressSelectorPanel ініціалізовано\n")
-        else:
-            self.logger.warning(f"НЕ ПЕРЕДАНО: records={len(records) if records else 0}, address_panel={self.address_panel is not None}")
-
-        self._cache_loaded = True
-        self.logger.info("=== КІНЕЦЬ ЗАВАНТАЖЕННЯ ===")
+        # Запускаємо фонове завантаження кешу
+        self._start_background_cache_loading()
         
         self.logger.info("GUI ініціалізовано")
     
@@ -361,6 +343,14 @@ class MainWindow(QMainWindow):
     
     def _start_background_cache_loading(self):
         """Запускає фонове завантаження кешу"""
+        self.logger.info("=== ПОЧАТОК ФОНОВОГО ЗАВАНТАЖЕННЯ UKRPOSHTA CACHE ===")
+        
+        # Завантажуємо magistral records синхронно (швидко)
+        self.search_manager.search_engine._ensure_loaded()
+        records = self.search_manager.get_magistral_records()
+        self.logger.info(f"Отримано {len(records) if records else 0} записів")
+        
+        # А AddressSelectorPanel завантажуємо у фоні
         self.cache_thread = CacheLoaderThread(self.search_manager)
         self.cache_thread.progress.connect(self._on_cache_progress)
         self.cache_thread.finished.connect(self._on_cache_loaded)
@@ -376,10 +366,14 @@ class MainWindow(QMainWindow):
     def _on_cache_loaded(self, records: list):
         """Колбек після завантаження кешу"""
         if records and self.address_panel:
+            self.logger.info(f"Передаємо {len(records):,} записів в AddressSelectorPanel...")
+            print(f"\n📦 Передаємо {len(records):,} записів в AddressSelectorPanel...")
             self.address_panel.set_magistral_cache(records)
-            self.logger.info(f"Magistral cache завантажено: {len(records)} записів")
+            self.logger.info("AddressSelectorPanel ініціалізовано")
+            print("✅ AddressSelectorPanel ініціалізовано\n")
             self._cache_loaded = True
             self.status_bar.setText(f"✅ Довідник завантажено ({len(records):,} записів). Готово!")
+            self.logger.info("=== КІНЕЦЬ ФОНОВОГО ЗАВАНТАЖЕННЯ ===")
         else:
             self.logger.error("Не вдалося завантажити magistral cache")
             self.status_bar.setText("⚠️ Помилка завантаження довідника")
