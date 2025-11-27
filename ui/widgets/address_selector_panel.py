@@ -500,6 +500,10 @@ class AddressSelectorPanel(QWidget):
             self.current_city_records = []
             return
         
+        # ✅ ЯКЩО КЕШ ЩЕ НЕ ЗАВАНТАЖЕНИЙ - НЕ ОЧИЩУЄМО ПОЛЯ
+        if not self.magistral_cache:
+            return
+        
         city_clean = city_text.split('(')[0].strip()
         district_clean = None
         if '(' in city_text:
@@ -548,6 +552,10 @@ class AddressSelectorPanel(QWidget):
     def on_street_changed(self):
         """Зміна вулиці"""
         street_text = self.street_input.text().strip()
+        
+        # ✅ ЯКЩО КЕШ ЩЕ НЕ ЗАВАНТАЖЕНИЙ - НЕ ОЧИЩУЄМО ПОЛЯ
+        if not self.magistral_cache:
+            return
         
         if not street_text or not self.current_city_records:
             if self.current_city_records and not street_text:
