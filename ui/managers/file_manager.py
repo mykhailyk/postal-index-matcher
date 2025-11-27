@@ -70,7 +70,7 @@ class FileManager:
             
             # ✅ Логування деталей
             df_cols = self.excel_handler.df.columns.tolist()
-            self.logger.info(f"✓ Колони: {', '.join(df_cols[:5])}{'...' if len(df_cols) > 5 else ''}")
+            self.logger.info(f"✓ Колони: {', '.join(str(c) for c in df_cols[:5])}{'...' if len(df_cols) > 5 else ''}")
             
             # Створюємо віртуальну колонку "Старий індекс"
             self._initialize_old_index_column()

@@ -1582,8 +1582,8 @@ class MainWindow(QMainWindow):
         )
         
         # Зберігаємо ширини стовпців
-        if self.table.columnCount() > 0:
-            widths = [self.table.columnWidth(i) for i in range(self.table.columnCount())]
+        if self.table_panel.table.columnCount() > 0:
+            widths = [self.table_panel.table.columnWidth(i) for i in range(self.table_panel.table.columnCount())]
             SettingsManager.set_column_widths(widths)
         
         # Зберігаємо розміри splitter
