@@ -162,6 +162,38 @@ class HybridSearch:
         # 4. Визначаємо можливість автопідстановки
         auto_result = self._find_auto_result(address, scored_results)
         
+        # ============ 5. ЛОГІКА "ЗАГАЛЬНОГО ІНДЕКСУ" (для не-Києва) ============
+        # Якщо автопідстановка не знайдена, і це не Київ - шукаємо загальний індекс
+        is_kyiv = address.city and self.normalizer.normalize_city(address.city) in ['київ', 'м.київ', 'м. київ']
+        
+        if not auto_result and not is_kyiv and address.city:
+            # Шукаємо загальні результати (по місту)
+            general_results = self._find_general_city_results(address)
+            
+            if general_results:
+                self.logger.info(f"💡 Знайдено {len(general_results)} загальних індексів для '{address.city}'")
+                
+                # Додаємо їх до результатів (якщо їх ще немає там)
+                # Перевіряємо дублікати по індексу
+                existing_indices = {r['index'] for r in scored_results}
+                
+                for gen_res in general_results:
+                    if gen_res['index'] not in existing_indices:
+                        scored_results.append(gen_res)
+                
+                # Сортуємо знову
+                scored_results.sort(key=lambda x: x['score'], reverse=True)
+                
+                # Спробуємо знайти авто-результат знову (вже з загальними)
+                # Для загальних індексів дозволяємо автопідстановку якщо це єдиний варіант
+                if len(general_results) == 1 and not address.region:
+                     # Якщо не вказана область, але знайшли тільки одне місто з такою назвою - це успіх
+                     pass
+                
+                # Оновлюємо auto_result якщо він з'явився (або якщо ми вирішили що загальний підходить)
+                if not auto_result:
+                    auto_result = self._find_auto_result(address, scored_results, allow_general=True)
+        
         # ============ ЛОГУВАННЯ РЕЗУЛЬТАТІВ ============
         search_mode = 'auto' if auto_result else 'manual'
         
@@ -203,7 +235,76 @@ class HybridSearch:
             'search_mode': 'none'
         }
     
-    def _find_auto_result(self, address: Address, results: List[Dict]) -> Optional[Dict]:
+    def _find_general_city_results(self, address: Address) -> List[Dict]:
+        """
+        Шукає "загальні" результати для міста (найнижчий індекс),
+        коли точна вулиця не знайдена.
+        Повертає список варіантів (якщо є кілька населених пунктів з такою назвою).
+        """
+        if not address.city:
+            return []
+            
+        candidates = self.loader.get_candidates_by_city_prefix(address.city)
+        if not candidates:
+            return []
+            
+        norm_city = self.normalizer.normalize_city(address.city)
+        norm_region = self.normalizer.normalize_region(address.region) if address.region else None
+        
+        # Групуємо по унікальних населених пунктах (Область + Район + Місто)
+        unique_cities = {}
+        
+        for record in candidates:
+            if record.normalized_city != norm_city:
+                continue
+                
+            # Якщо задана область - фільтруємо
+            if norm_region and record.normalized_region != norm_region:
+                continue
+                
+            # Ключ для групування: Область + Район
+            key = (record.region, record.new_district or record.old_district)
+            
+            if key not in unique_cities:
+                unique_cities[key] = []
+            unique_cities[key].append(record)
+            
+        results = []
+        
+        for (region, district), records in unique_cities.items():
+            # Знаходимо мінімальний індекс для цього міста
+            indices = [r.city_index for r in records if r.city_index and len(r.city_index) == 5 and r.city_index.isdigit()]
+            if not indices:
+                continue
+                
+            min_index = min(indices)
+            
+            # Створюємо "загальний" результат
+            # Беремо перший запис як шаблон для назв
+            template = records[0]
+            
+            result = {
+                'region': region,
+                'district': district,
+                'city': template.city,
+                'city_ua': template.city,
+                'street': f"Загальний для н.п. (вулицю не знайдено)", # Спеціальна позначка
+                'street_ua': f"Загальний для н.п.",
+                'building': '',
+                'buildings': '',
+                'index': min_index,
+                'score': 0.89, # Трохи менше ніж поріг точного (0.90), але достатньо високо
+                'confidence': 89,
+                'features': 'Загальний індекс',
+                'not_working': '',
+                'is_working': True,
+                'is_general': True # Прапор що це загальний індекс
+            }
+            results.append(result)
+            
+        return results
+
+    def _find_auto_result(self, address: Address, results: List[Dict], allow_general: bool = False) -> Optional[Dict]:
         """
         Визначає чи можлива автопідстановка
         
@@ -221,7 +322,13 @@ class HybridSearch:
             return None
         
         # Фільтруємо результати ≥ AUTO_MATCH_CONFIDENCE
-        perfect_results = [r for r in results if r['confidence'] >= config.AUTO_MATCH_CONFIDENCE]
+        # АБО якщо це загальний індекс і дозволено (score >= 0.85)
+        perfect_results = []
+        for r in results:
+            if r['confidence'] >= config.AUTO_MATCH_CONFIDENCE:
+                perfect_results.append(r)
+            elif allow_general and r.get('is_general') and r['score'] >= 0.85:
+                perfect_results.append(r)
         
         # Має бути ТІЛЬКИ ОДИН результат з високою впевненістю
         if len(perfect_results) != 1:
@@ -242,8 +349,8 @@ class HybridSearch:
                 )
                 return None
         
-        # Перевіряємо ТОЧНЕ співпадіння будинку
-        if address.building and address.building.strip():
+        # Перевіряємо ТОЧНЕ співпадіння будинку (ТІЛЬКИ для НЕ загальних результатів)
+        if not result.get('is_general') and address.building and address.building.strip():
             query_building = address.building.upper().replace("-", "").replace(" ", "").strip()
             buildings_list = [
                 b.strip().upper().replace("-", "").replace(" ", "") 

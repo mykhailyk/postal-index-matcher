@@ -213,3 +213,44 @@ class MagistralLoader:
         
         indices = self.index_by_region[region_norm]
         return [self.records[i] for i in indices]
+
+    def get_min_index_for_city(self, city: str, region: str = None, district: str = None) -> str:
+        """
+        Знаходить найменший індекс для міста (для загального результату)
+        """
+        if not city:
+            return ""
+            
+        candidates = self.get_candidates_by_city_prefix(city)
+        if not candidates:
+            return ""
+            
+        # Нормалізуємо для порівняння
+        norm_city = self.normalizer.normalize_city(city)
+        norm_region = self.normalizer.normalize_region(region) if region else None
+        
+        valid_indices = []
+        
+        for record in candidates:
+            # Перевіряємо місто
+            if record.normalized_city != norm_city:
+                continue
+                
+            # Перевіряємо область якщо задана
+            if norm_region and record.normalized_region != norm_region:
+                continue
+                
+            # Перевіряємо район якщо заданий (нестрого, бо райони мінялись)
+            if district:
+                # Тут можна додати логіку перевірки району, але поки пропускаємо
+                # бо старі/нові райони можуть плутатись
+                pass
+            
+            if record.city_index and len(record.city_index) == 5 and record.city_index.isdigit():
+                valid_indices.append(record.city_index)
+        
+        if not valid_indices:
+            return ""
+            
+        # Повертаємо найменший індекс
+        return min(valid_indices)
