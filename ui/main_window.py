@@ -891,7 +891,15 @@ class MainWindow(QMainWindow):
                                     item.setFont(font)
                             
                             stats['auto_applied'] += 1
-                            self.scroll_to_row(idx)
+                            
+                            # ✅ СКРОЛІНГ ТА ВИДІЛЕННЯ
+                            # Використовуємо scrollToItem для надійного скролінгу
+                            self.table_panel.table.scrollToItem(
+                                self.table_panel.table.item(idx, 0),
+                                QAbstractItemView.PositionAtCenter
+                            )
+                            self.table_panel.table.selectRow(idx)
+                            
                             self.logger.info(f"✅ Рядок {idx + 1}: Автопідстановка [{auto_index}] - {auto_confidence}%")
                         else:
                             stats['manual_required'] += 1

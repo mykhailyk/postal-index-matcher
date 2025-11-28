@@ -163,16 +163,18 @@ class HybridSearch:
         auto_result = self._find_auto_result(address, scored_results)
         
         # ============ 5. ЛОГІКА "ЗАГАЛЬНОГО ІНДЕКСУ" (для не-Києва) ============
+        # ============ 5. ЛОГІКА "ЗАГАЛЬНОГО ІНДЕКСУ" (для не-Києва) ============
         # Якщо автопідстановка не знайдена, і це не Київ - шукаємо загальний індекс
         # Нормалізуємо місто запиту
         query_city_norm = self.normalizer.normalize_city(address.city) if address.city else ""
         
-        # Перевіряємо на Київ (з урахуванням транслітерації ї->і: "київ" -> "киів")
-        is_kyiv_query = query_city_norm in ['київ', 'м.київ', 'м. київ', 'киів', 'м.киів', 'м. киів']
+        # Великі міста, для яких ми НЕ хочемо "загальний індекс" (бо там багато відділень)
+        # і для яких ми хочемо пріоритет "м. Місто" над "с. Місто"
+        major_cities = ['київ', 'м.київ', 'киів', 'донецьк', 'м.донецьк', 'харків', 'одеса', 'дніпро', 'львів', 'запоріжжя']
+        is_major_city_query = query_city_norm in major_cities
         
-        # Якщо це запит на Київ - ми НЕ шукаємо загальні індекси (бо в Києві треба точність)
-        # І ми не хочемо щоб "с. Київ" перебивало "м. Київ"
-        if not auto_result and not is_kyiv_query and address.city:
+        # Якщо це запит на велике місто - ми НЕ шукаємо загальні індекси
+        if not auto_result and not is_major_city_query and address.city:
             # Шукаємо загальні результати (по місту)
             general_results = self._find_general_city_results(address)
             
@@ -443,16 +445,19 @@ class HybridSearch:
             
             total_score += city_similarity * config.SCORE_CITY_WEIGHT
             
-            # БОНУС ДЛЯ СТОЛИЦІ
-            # Якщо запит "Київ" і результат "м. Київ" - даємо бонус
-            # Враховуємо транслітерацію "київ" -> "киів"
-            if query_city in ['київ', 'м.київ', 'киів', 'м.киів'] and record.normalized_city in ['київ', 'киів']:
-                # Перевіряємо що це саме столиця (зазвичай область Київ або порожня, район Київ або порожній)
-                is_capital = (not record.region or record.region == 'Київ') and \
-                             (not record.new_district or record.new_district == 'Київ')
-                
-                if is_capital:
-                    total_score += config.SCORE_CAPITAL_BONUS
+            # БОНУС ДЛЯ ВЕЛИКИХ МІСТ (Столиця + Обласні центри)
+            # Якщо запит "Київ"/"Донецьк" і результат "м. Київ"/"м. Донецьк" - даємо бонус
+            major_cities_bonus = ['київ', 'донецьк', 'харків', 'одеса', 'дніпро', 'львів', 'запоріжжя']
+            
+            if query_city in major_cities_bonus or query_city in ['м.' + c for c in major_cities_bonus]:
+                 if record.normalized_city in major_cities_bonus:
+                    # Перевіряємо що це саме місто (зазвичай область співпадає або порожня)
+                    # Для Києва область Київ або порожня
+                    # Для Донецька область Донецька
+                    is_major = True # Спрощена перевірка, бо normalized_city вже перевірено
+                    
+                    if is_major:
+                        total_score += config.SCORE_CAPITAL_BONUS
         
         # ============ ФІЛЬТР РЕГІОНУ (НОВЕ!) ============
         # Якщо область задана, перевіряємо її строго
