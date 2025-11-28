@@ -104,6 +104,22 @@ class TextNormalizer:
                 street = street[len(prefix):].strip()
                 break
         
+        # Розширюємо скорочення
+        # "л." -> "лесі", "т." -> "тараса", "б." -> "богдана"
+        street = re.sub(r'\bл\.\s*', 'лесі ', street, flags=re.IGNORECASE)
+        street = re.sub(r'\bт\.\s*', 'тараса ', street, flags=re.IGNORECASE)
+        street = re.sub(r'\bб\.\s*', 'богдана ', street, flags=re.IGNORECASE)
+        street = re.sub(r'\bі\.\s*', 'івана ', street, flags=re.IGNORECASE)
+        street = re.sub(r'\bм\.\s*', 'миколи ', street, flags=re.IGNORECASE)
+        street = re.sub(r'\bв\.\s*', 'василя ', street, flags=re.IGNORECASE)
+        street = re.sub(r'\bг\.\s*', 'григорія ', street, flags=re.IGNORECASE) # Додано
+        street = re.sub(r'\bп\.\s*', 'петра ', street, flags=re.IGNORECASE) # Додано
+        street = re.sub(r'\bо\.\s*', 'олександра ', street, flags=re.IGNORECASE) # Додано
+        
+        # Заміна "бул." -> "бульвар"
+        street = re.sub(r'\bбул\.\s*', 'бульвар ', street, flags=re.IGNORECASE)
+        street = re.sub(r'\bбульв\.\s*', 'бульвар ', street, flags=re.IGNORECASE)
+        
         return self.normalize_text(street)
     
     def normalize_region(self, region: str) -> str:
@@ -140,7 +156,6 @@ class TextNormalizer:
         # Залишаємо тільки приголосні
         consonants = ''.join([c for c in text if c.isalpha() and c not in vowels])
         
-        return consonants
         return consonants
     
     def try_extract_city(self, street: str) -> tuple[str, str]:
@@ -203,3 +218,4 @@ class TextNormalizer:
             return building, clean_street
             
         return "", street
+```

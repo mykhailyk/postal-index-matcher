@@ -166,7 +166,9 @@ class HybridSearch:
         # Якщо автопідстановка не знайдена, і це не Київ - шукаємо загальний індекс
         # Нормалізуємо місто запиту
         query_city_norm = self.normalizer.normalize_city(address.city) if address.city else ""
-        is_kyiv_query = query_city_norm in ['київ', 'м.київ', 'м. київ']
+        
+        # Перевіряємо на Київ (з урахуванням транслітерації ї->і: "київ" -> "киів")
+        is_kyiv_query = query_city_norm in ['київ', 'м.київ', 'м. київ', 'киів', 'м.киів', 'м. киів']
         
         # Якщо це запит на Київ - ми НЕ шукаємо загальні індекси (бо в Києві треба точність)
         # І ми не хочемо щоб "с. Київ" перебивало "м. Київ"
@@ -443,7 +445,8 @@ class HybridSearch:
             
             # БОНУС ДЛЯ СТОЛИЦІ
             # Якщо запит "Київ" і результат "м. Київ" - даємо бонус
-            if query_city in ['київ', 'м.київ'] and record.normalized_city == 'київ':
+            # Враховуємо транслітерацію "київ" -> "киів"
+            if query_city in ['київ', 'м.київ', 'киів', 'м.киів'] and record.normalized_city in ['київ', 'киів']:
                 # Перевіряємо що це саме столиця (зазвичай область Київ або порожня, район Київ або порожній)
                 is_capital = (not record.region or record.region == 'Київ') and \
                              (not record.new_district or record.new_district == 'Київ')
