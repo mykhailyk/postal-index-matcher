@@ -116,10 +116,6 @@ class TextNormalizer:
         street = re.sub(r'\bп\.\s*', 'петра ', street, flags=re.IGNORECASE) # Додано
         street = re.sub(r'\bо\.\s*', 'олександра ', street, flags=re.IGNORECASE) # Додано
         
-        # Заміна "бул." -> "бульвар"
-        street = re.sub(r'\bбул\.\s*', 'бульвар ', street, flags=re.IGNORECASE)
-        street = re.sub(r'\bбульв\.\s*', 'бульвар ', street, flags=re.IGNORECASE)
-        
         return self.normalize_text(street)
     
     def normalize_region(self, region: str) -> str:
@@ -218,4 +214,4 @@ class TextNormalizer:
             return building, clean_street
             
         return "", street
-```
+
