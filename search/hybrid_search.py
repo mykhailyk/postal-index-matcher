@@ -164,9 +164,13 @@ class HybridSearch:
         
         # ============ 5. ЛОГІКА "ЗАГАЛЬНОГО ІНДЕКСУ" (для не-Києва) ============
         # Якщо автопідстановка не знайдена, і це не Київ - шукаємо загальний індекс
-        is_kyiv = address.city and self.normalizer.normalize_city(address.city) in ['київ', 'м.київ', 'м. київ']
+        # Нормалізуємо місто запиту
+        query_city_norm = self.normalizer.normalize_city(address.city) if address.city else ""
+        is_kyiv_query = query_city_norm in ['київ', 'м.київ', 'м. київ']
         
-        if not auto_result and not is_kyiv and address.city:
+        # Якщо це запит на Київ - ми НЕ шукаємо загальні індекси (бо в Києві треба точність)
+        # І ми не хочемо щоб "с. Київ" перебивало "м. Київ"
+        if not auto_result and not is_kyiv_query and address.city:
             # Шукаємо загальні результати (по місту)
             general_results = self._find_general_city_results(address)
             
@@ -436,6 +440,16 @@ class HybridSearch:
                 return city_similarity * 0.2
             
             total_score += city_similarity * config.SCORE_CITY_WEIGHT
+            
+            # БОНУС ДЛЯ СТОЛИЦІ
+            # Якщо запит "Київ" і результат "м. Київ" - даємо бонус
+            if query_city in ['київ', 'м.київ'] and record.normalized_city == 'київ':
+                # Перевіряємо що це саме столиця (зазвичай область Київ або порожня, район Київ або порожній)
+                is_capital = (not record.region or record.region == 'Київ') and \
+                             (not record.new_district or record.new_district == 'Київ')
+                
+                if is_capital:
+                    total_score += config.SCORE_CAPITAL_BONUS
         
         # ============ ФІЛЬТР РЕГІОНУ (НОВЕ!) ============
         # Якщо область задана, перевіряємо її строго
