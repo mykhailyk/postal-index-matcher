@@ -514,7 +514,11 @@ class MainWindow(QMainWindow):
         
         # Прокручуємо до активного рядка
         if current - 1 < self.table_panel.table.rowCount():
-            self.scroll_to_row(current - 1)
+            row_idx = current - 1
+            self.scroll_to_row(row_idx)
+            
+            # ✅ FIX: Додаємо затримку для виділення рядка, щоб UI встиг оновитися
+            QTimer.singleShot(50, lambda: self.table_panel.table.selectRow(row_idx))
     
     def _on_row_processed(self, row_idx: int, index: str):
         """Колбек обробки рядка"""
@@ -1556,13 +1560,7 @@ class MainWindow(QMainWindow):
         """Оновлює розмір шрифту таблиці"""
         self.table_panel.table.setStyleSheet(f"font-size: {size}px;")
     
-    def scroll_to_row(self, row):
-        """Прокручує таблицю до рядка"""
-        if row >= 0 and row < self.table_panel.table.rowCount():
-            self.table_panel.table.scrollToItem(
-                self.table_panel.table.item(row, 0),
-                QAbstractItemView.PositionAtCenter
-            )
+
     
     # ==================== НАВІГАЦІЯ ====================
     

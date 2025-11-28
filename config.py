@@ -100,9 +100,9 @@ AUTO_PROCESSING_THRESHOLD = 90  # 90% за замовчуванням (може 
 
 # ==================== НАЛАШТУВАННЯ ПОШУКУ (НОВІ) ====================
 # Пороги для автоматичної підстановки (HybridSearch)
-AUTO_MATCH_CONFIDENCE = 98        # Мінімальна впевненість для авто-підстановки (0-100)
-STRICT_MATCH_CITY_THRESHOLD = 0.95 # Поріг схожості міста для авто-підстановки
-STRICT_MATCH_STREET_THRESHOLD = 0.90 # Поріг схожості вулиці для авто-підстановки
+AUTO_MATCH_CONFIDENCE = 90        # Мінімальна впевненість для авто-підстановки (0-100)
+STRICT_MATCH_CITY_THRESHOLD = 0.90 # Поріг схожості міста для авто-підстановки
+STRICT_MATCH_STREET_THRESHOLD = 0.85 # Поріг схожості вулиці для авто-підстановки
 
 # Ваги та пороги для розрахунку score (HybridSearch)
 SCORE_CITY_WEIGHT = 0.35          # Вага міста
@@ -110,12 +110,12 @@ SCORE_STREET_WEIGHT = 0.35        # Вага вулиці
 SCORE_BUILDING_WEIGHT = 0.25      # Вага будинку
 SCORE_INDEX_WEIGHT = 0.05         # Вага індексу
 
-SCORE_CITY_THRESHOLD = 0.85       # Мінімальна схожість міста для нарахування балів
-SCORE_STREET_THRESHOLD = 0.75     # Мінімальна схожість вулиці для нарахування балів
-SCORE_REGION_THRESHOLD = 0.80     # Мінімальна схожість області (якщо задана)
+SCORE_CITY_THRESHOLD = 0.90       # Мінімальна схожість міста для нарахування балів (було 0.85)
+SCORE_STREET_THRESHOLD = 0.85     # Мінімальна схожість вулиці для нарахування балів (було 0.75)
+SCORE_REGION_THRESHOLD = 0.85     # Мінімальна схожість області (якщо задана)
 
 SCORE_BUILDING_EXACT_BONUS = 0.25 # Бонус за точне співпадіння будинку
 SCORE_BUILDING_PARTIAL_BONUS = 0.10 # Бонус за часткове співпадіння будинку
-SCORE_BUILDING_PENALTY = 0.15     # Штраф за відсутність будинку
+SCORE_BUILDING_PENALTY = 0.05     # Штраф за відсутність будинку (зменшено з 0.15)
 
-SCORE_PERFECT_MATCH_BONUS = 0.10  # Бонус за ідеальне співпадіння всіх полів
+SCORE_PERFECT_MATCH_BONUS = 0.15  # Бонус за ідеальне співпадіння всіх полів (збільшено з 0.10)

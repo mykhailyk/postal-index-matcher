@@ -81,6 +81,14 @@ class HybridSearch:
                 address.city = extracted_city
                 address.street = cleaned_street
         
+        # Спроба витягнути будинок з вулиці, якщо будинок не вказано
+        if not address.building and address.street:
+            extracted_building, cleaned_street_b = self.normalizer.try_extract_building(address.street)
+            if extracted_building:
+                self.logger.info(f"💡 Витягнуто будинок з вулиці: '{extracted_building}' (вулиця: '{cleaned_street_b}')")
+                address.building = extracted_building
+                address.street = cleaned_street_b
+        
         # ============ СПЕЦІАЛЬНА ОБРОБКА: абонентська скринька ============
         if address.street and ('а/с' in address.street.lower() or 'п/с' in address.street.lower() or 'абонент' in address.street.lower()):
             if 'київ' in address.city.lower():
@@ -309,7 +317,8 @@ class HybridSearch:
         # ============ 1. МІСТО (35%) - ЖОРСТКИЙ ФІЛЬТР ============
         city_similarity = 0.0
         if query_city and record.normalized_city:
-            city_similarity = self.similarity.jaro_winkler_similarity(
+            # Використовуємо token_similarity для міста теж (щоб "Київ м." == "м. Київ")
+            city_similarity = self.similarity.token_similarity(
                 query_city, 
                 record.normalized_city
             )
@@ -327,7 +336,8 @@ class HybridSearch:
             record_region = self.normalizer.normalize_region(record.region) if record.region else ""
             
             if record_region:
-                region_sim = self.similarity.jaro_winkler_similarity(query_region, record_region)
+                # Використовуємо token_similarity для регіону
+                region_sim = self.similarity.token_similarity(query_region, record_region)
                 if region_sim < config.SCORE_REGION_THRESHOLD:
                     # Регіон НЕ збігся - не повертаємо результат з іншого регіону
                     return 0.0
@@ -378,9 +388,13 @@ class HybridSearch:
                     total_score -= config.SCORE_BUILDING_PENALTY  # Штраф
         
         # ============ 4. ІНДЕКС (5%) ============
+        # ============ 4. ІНДЕКС (5%) ============
         if query_index and record.city_index:
-            record_index = record.city_index.strip().lstrip('0')
-            if query_index == record_index:
+            # Нормалізація індексу (видалення пробілів, нулів на початку)
+            q_idx = query_index.replace(" ", "").replace("\x00", "").lstrip('0')
+            r_idx = record.city_index.strip().replace(" ", "").replace("\x00", "").lstrip('0')
+            
+            if q_idx == r_idx:
                 total_score += config.SCORE_INDEX_WEIGHT
             else:
                 # Індекс не співпадає - невеликий штраф
@@ -388,7 +402,8 @@ class HybridSearch:
         
         # ============ БОНУС ЗА ІДЕАЛЬНЕ СПІВПАДІННЯ ============
         # Якщо все майже ідеально - додатковий бонус
-        if city_similarity >= 0.98 and street_similarity >= 0.95 and building_bonus >= config.SCORE_BUILDING_EXACT_BONUS:
+        # Вимоги: City >= 0.95, Street >= 0.95, Building EXACT match
+        if city_similarity >= 0.95 and street_similarity >= 0.95 and building_bonus >= config.SCORE_BUILDING_EXACT_BONUS:
             total_score += config.SCORE_PERFECT_MATCH_BONUS  # Бонус
         
         # Обмежуємо score від 0 до 1

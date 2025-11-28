@@ -176,3 +176,30 @@ class TextNormalizer:
             return city, clean_street
             
         return "", street
+
+    def try_extract_building(self, street: str) -> tuple[str, str]:
+        """
+        Спроба витягнути номер будинку з поля вулиці
+        Наприклад: "Мічуріна 28" -> ("28", "Мічуріна")
+        Повертає (знайдений_будинок, очищена_вулиця)
+        """
+        if not street:
+            return "", street
+            
+        # Патерн: Вулиця + номер будинку (можливо з літерою) + можливо квартира
+        # Приклад: "Мічуріна 28, #35" -> building="28", street="Мічуріна"
+        
+        # 1. Спочатку спробуємо знайти номер будинку перед комою або #
+        match = re.search(r'^(.*?)\s+(\d+[а-яА-Яa-zA-Z]?(?:[/-]\d+)?)\s*(?:,.*|#.*)?$', street)
+        if match:
+            clean_street = match.group(1).strip()
+            building = match.group(2).strip()
+            
+            # Перевіряємо, чи не є це частиною назви вулиці (наприклад "1-го Травня")
+            # Якщо вулиця занадто коротка або закінчується на дефіс - це підозріло
+            if len(clean_street) < 3 or clean_street.endswith('-'):
+                return "", street
+                
+            return building, clean_street
+            
+        return "", street
