@@ -882,7 +882,7 @@ class MainWindow(QMainWindow):
                                 self.file_manager.excel_handler.df.iloc[idx, idx_col] = auto_index
                                 
                                 # Оновлюємо таблицю
-                                item = self.table.item(idx, idx_col)
+                                item = self.table_panel.table.item(idx, idx_col)
                                 if item:
                                     item.setText(auto_index)
                                     item.setForeground(QColor(76, 175, 80))
