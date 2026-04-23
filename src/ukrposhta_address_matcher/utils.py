@@ -55,8 +55,9 @@ def normalize_for_compare(value: str) -> str:
 
 def normalize_ru_to_ua_tokens(value: str) -> str:
     result = value
-    for source, target in RU_TO_UA_MAP.items():
-        result = re.sub(re.escape(source), target, result, flags=re.IGNORECASE)
+    for source, target in sorted(RU_TO_UA_MAP.items(), key=lambda item: len(item[0]), reverse=True):
+        pattern = rf"(?<![\w\u0400-\u04FF]){re.escape(source)}(?![\w\u0400-\u04FF])"
+        result = re.sub(pattern, target, result, flags=re.IGNORECASE)
     return normalize_spaces(result)
 
 
@@ -67,6 +68,11 @@ def normalize_house_number(value: str) -> str:
     value = value.replace("\u041a\u041e\u0420\u041f.", "\u041a\u041e\u0420\u041f")
     value = value.replace("\u041a\u041e\u0420\u041f\u0423\u0421", "\u041a\u041e\u0420\u041f")
     return value
+
+
+def normalize_house_number_loose(value: str) -> str:
+    value = normalize_house_number(value)
+    return value.replace("/", "")
 
 
 def sanitize_extras(value: str) -> tuple[str, list[str]]:
@@ -88,7 +94,7 @@ def tokenize_address(value: str) -> list[str]:
 
 def extract_apartment(value: str) -> tuple[str, str]:
     match = re.search(
-        r"\b(?:\u043a\u0432\.?|\u043a\u0432\u0430\u0440\u0442\u0438\u0440\u0430)\s*([0-9A-Za-z\u0410-\u042f\u0430-\u044f\u0406\u0456\u0407\u0457\u0404\u0454\u0490\u0491/-]+)",
+        r"\b(?:\u043a\u0432\.?|\u043a\u0432\u0430\u0440\u0442\u0438\u0440\u0430)\s*([0-9][0-9A-Za-z\u0410-\u042f\u0430-\u044f\u0406\u0456\u0407\u0457\u0404\u0454\u0490\u0491/-]*)",
         value,
         flags=re.IGNORECASE,
     )

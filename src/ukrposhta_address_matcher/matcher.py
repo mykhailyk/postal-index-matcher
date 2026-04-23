@@ -7,7 +7,7 @@ from ukrposhta_address_matcher.cache import CacheStore
 from ukrposhta_address_matcher.classifier import UkrposhtaClassifierClient
 from ukrposhta_address_matcher.models import AddressCandidate, MatchResult, ParsedAddress, StructuredAddress, StreetCandidate
 from ukrposhta_address_matcher.parser import parse_raw_address
-from ukrposhta_address_matcher.utils import normalize_for_compare, normalize_house_number
+from ukrposhta_address_matcher.utils import normalize_for_compare, normalize_house_number, normalize_house_number_loose
 
 
 class AddressMatcher:
@@ -41,6 +41,19 @@ class AddressMatcher:
                     parsed=parsed,
                     candidate=best_locked,
                     status=self._status_from_candidate(parsed, best_locked, locked=True),
+                    postcode_state="postcode_verified_locked",
+                    warnings=warnings,
+                    candidate_count=len(postcode_candidates),
+                    input_postcode=input_postcode,
+                )
+                self._store_cached_result(raw_address, input_postcode, result)
+                return result
+            refined_locked = self._search_with_locked_postcode(parsed, input_postcode, postcode_candidates)
+            if refined_locked is not None:
+                result = self._result_from_candidate(
+                    parsed=parsed,
+                    candidate=refined_locked,
+                    status=self._status_from_candidate(parsed, refined_locked, locked=True),
                     postcode_state="postcode_verified_locked",
                     warnings=warnings,
                     candidate_count=len(postcode_candidates),
@@ -204,6 +217,75 @@ class AddressMatcher:
             )
         return None
 
+    def _search_with_locked_postcode(
+        self,
+        parsed: ParsedAddress,
+        input_postcode: str,
+        postcode_candidates: list[AddressCandidate],
+    ) -> AddressCandidate | None:
+        if not postcode_candidates:
+            return None
+
+        city_groups: dict[str, list[AddressCandidate]] = {}
+        for candidate in postcode_candidates:
+            city_groups.setdefault(candidate.city_id or f"{candidate.city}|{candidate.district}", []).append(candidate)
+
+        ranked_groups: list[tuple[int, list[AddressCandidate]]] = []
+        for group in city_groups.values():
+            sample = group[0]
+            score = 0
+            if parsed.city and normalize_for_compare(sample.city) == normalize_for_compare(parsed.city):
+                score += 50
+            elif parsed.city and normalize_for_compare(sample.old_city) == normalize_for_compare(parsed.city):
+                score += 45
+            if parsed.region and normalize_for_compare(sample.region) == normalize_for_compare(parsed.region):
+                score += 20
+            if parsed.district and normalize_for_compare(sample.district) == normalize_for_compare(parsed.district):
+                score += 20
+            if not parsed.city:
+                score += len(group)
+            ranked_groups.append((score, group))
+        ranked_groups.sort(key=lambda item: item[0], reverse=True)
+
+        for _, group in ranked_groups[:5]:
+            sample = group[0]
+            if not sample.city_id or not parsed.street:
+                continue
+            streets = self.classifier_client.get_streets_by_name(sample.city_id, parsed.street)
+            street = self._pick_best_street(parsed, streets)
+            if street is None:
+                continue
+            houses = self.classifier_client.get_houses_by_street_id(street.street_id)
+            house = self._pick_best_house(parsed.house_number, houses)
+            if house is None:
+                if parsed.house_number:
+                    fallback_house = self._house_with_same_postcode(houses, input_postcode)
+                    if fallback_house is None:
+                        continue
+                    house = fallback_house
+                else:
+                    house = self._house_with_same_postcode(houses, input_postcode) or self._fallback_house(houses)
+            if not house or not house[0]:
+                continue
+            if house[1] and house[1] != input_postcode:
+                continue
+            return AddressCandidate(
+                postcode=house[1] or input_postcode,
+                region=street.region,
+                district=street.district,
+                city=street.city,
+                city_type_short=street.city_type_short,
+                city_type_full=street.city_type_full,
+                street=street.street,
+                street_type_short=street.street_type_short,
+                street_type_full=street.street_type_full,
+                house_number=house[0],
+                old_street=street.old_street,
+                city_id=street.city_id,
+                street_id=street.street_id,
+            )
+        return None
+
     def _forced_fill(self, parsed: ParsedAddress) -> AddressCandidate | None:
         if not parsed.city:
             return None
@@ -287,6 +369,10 @@ class AddressMatcher:
         exact = [item for item in houses if normalize_house_number(item[0]) == normalized_input]
         if exact:
             return exact[0]
+        loose_input = normalize_house_number_loose(raw_house)
+        loose = [item for item in houses if normalize_house_number_loose(item[0]) == loose_input]
+        if loose:
+            return loose[0]
         stripped = "".join(char for char in normalized_input if char.isdigit() or char == "/")
         near = [
             item
@@ -303,6 +389,12 @@ class AddressMatcher:
         ordered = sorted(houses, key=lambda item: normalize_house_number(item[0]))
         return ordered[0]
 
+    def _house_with_same_postcode(self, houses: list[tuple[str, str]], postcode: str) -> tuple[str, str] | None:
+        matching = [item for item in houses if item[1] == postcode]
+        if not matching:
+            return None
+        return sorted(matching, key=lambda item: normalize_house_number(item[0]))[0]
+
     def _score_candidate(self, parsed: ParsedAddress, candidate: AddressCandidate, locked: bool) -> int:
         score = 35 if locked else 0
         if parsed.city and normalize_for_compare(candidate.city) == normalize_for_compare(parsed.city):
@@ -314,6 +406,8 @@ class AddressMatcher:
         elif parsed.street and normalize_for_compare(candidate.old_street) == normalize_for_compare(parsed.street):
             score += 22
         if parsed.house_number and normalize_house_number(candidate.house_number) == normalize_house_number(parsed.house_number):
+            score += 15
+        elif parsed.house_number and normalize_house_number_loose(candidate.house_number) == normalize_house_number_loose(parsed.house_number):
             score += 15
         elif parsed.house_number:
             house_match = self._pick_best_house(parsed.house_number, [(candidate.house_number, candidate.postcode)])
@@ -371,7 +465,8 @@ class AddressMatcher:
             if normalize_for_compare(parsed.street) != normalize_for_compare(candidate.old_street):
                 deviation += 25
         if parsed.house_number and normalize_house_number(parsed.house_number) != normalize_house_number(candidate.house_number):
-            deviation += 15
+            if normalize_house_number_loose(parsed.house_number) != normalize_house_number_loose(candidate.house_number):
+                deviation += 15
         if forced_fill:
             deviation = max(deviation, 60)
         return min(100, deviation)

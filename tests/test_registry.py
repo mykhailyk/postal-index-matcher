@@ -11,10 +11,11 @@ def test_read_registry_supports_10_and_11_fields(tmp_path: Path) -> None:
         "2;0;04116;addr;name;simple;10;mailing;5;110x220;R123",
         encoding="utf-8",
     )
-    rows = read_registry(file_path)
-    assert len(rows) == 2
-    assert len(rows[0].fields) == 10
-    assert len(rows[1].fields) == 11
+    document = read_registry(file_path)
+    assert document.encoding == "utf-8"
+    assert len(document.rows) == 2
+    assert len(document.rows[0].fields) == 10
+    assert len(document.rows[1].fields) == 11
 
 
 def test_write_registry_replaces_address_and_postcode(tmp_path: Path) -> None:

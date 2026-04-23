@@ -3,21 +3,43 @@ from __future__ import annotations
 from pathlib import Path
 import csv
 
-from ukrposhta_address_matcher.models import MatchResult, RegistryRow
+from ukrposhta_address_matcher.models import MatchResult, RegistryDocument, RegistryRow
 from ukrposhta_address_matcher.utils import compact_json
 
 
-def read_registry(path: str | Path) -> list[RegistryRow]:
+INPUT_ENCODINGS = ["utf-8", "utf-8-sig", "cp1251", "cp866"]
+
+
+def read_registry(path: str | Path) -> RegistryDocument:
+    raw_bytes = Path(path).read_bytes()
+    text = None
+    encoding = "utf-8"
+    for candidate_encoding in INPUT_ENCODINGS:
+        try:
+            text = raw_bytes.decode(candidate_encoding)
+            encoding = candidate_encoding
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        text = raw_bytes.decode("latin-1")
+        encoding = "latin-1"
+
     rows: list[RegistryRow] = []
-    for index, line in enumerate(Path(path).read_text(encoding="utf-8").splitlines(), start=1):
+    for index, line in enumerate(text.splitlines(), start=1):
         fields = line.rstrip("\n").split(";")
         if len(fields) not in (10, 11):
             raise ValueError(f"Unsupported field count {len(fields)} on line {index}")
         rows.append(RegistryRow(line_no=index, raw_line=line, fields=fields))
-    return rows
+    return RegistryDocument(rows=rows, encoding=encoding)
 
 
-def write_registry(path: str | Path, rows: list[RegistryRow], results: dict[int, MatchResult]) -> None:
+def write_registry(
+    path: str | Path,
+    rows: list[RegistryRow],
+    results: dict[int, MatchResult],
+    encoding: str = "utf-8",
+) -> None:
     output_lines: list[str] = []
     for row in rows:
         fields = row.fields[:]
@@ -25,7 +47,7 @@ def write_registry(path: str | Path, rows: list[RegistryRow], results: dict[int,
         fields[2] = result.structured_address.postcode
         fields[3] = compact_json(result.structured_address)
         output_lines.append(";".join(fields))
-    Path(path).write_text("\n".join(output_lines), encoding="utf-8")
+    Path(path).write_text("\n".join(output_lines), encoding=encoding)
 
 
 def write_report(path: str | Path, rows: list[RegistryRow], results: dict[int, MatchResult]) -> None:
@@ -61,4 +83,3 @@ def write_report(path: str | Path, rows: list[RegistryRow], results: dict[int, M
                     result.candidate_count,
                 ]
             )
-

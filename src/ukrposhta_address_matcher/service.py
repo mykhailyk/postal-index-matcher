@@ -19,13 +19,14 @@ def process_registry(
     settings: Settings,
     use_ai: bool = True,
 ) -> dict[str, int]:
-    rows = read_registry(input_path)
+    document = read_registry(input_path)
+    rows = document.rows
     cache_store = CacheStore(cache_path)
     classifier = UkrposhtaClassifierClient(settings.ukrposhta_bearer_token, cache_store)
     ai_client = GeminiFallbackClient(settings.gemini_api_key)
     matcher = AddressMatcher(classifier, cache_store=cache_store, ai_client=ai_client, use_ai=use_ai)
     results = {row.line_no: matcher.match(row.raw_address, row.postcode) for row in rows}
-    write_registry(output_path, rows, results)
+    write_registry(output_path, rows, results, encoding=document.encoding)
     write_report(report_path, rows, results)
     cache_store.close()
     return {

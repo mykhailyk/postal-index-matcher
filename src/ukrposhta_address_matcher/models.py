@@ -41,6 +41,12 @@ class RegistryRow:
 
 
 @dataclass(slots=True)
+class RegistryDocument:
+    rows: list[RegistryRow]
+    encoding: str
+
+
+@dataclass(slots=True)
 class AddressCandidate:
     postcode: str
     region: str
@@ -113,4 +119,3 @@ class ParsedAddress:
     house_number: str = ""
     apartment_number: str = ""
     extras: list[str] = field(default_factory=list)
-

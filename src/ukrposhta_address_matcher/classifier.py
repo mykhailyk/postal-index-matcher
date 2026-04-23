@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import asdict
 import hashlib
 from pathlib import Path
+import time
 from typing import Iterable
 from urllib.parse import urlencode
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
@@ -27,10 +29,11 @@ def _to_dict(entry: ET.Element) -> dict[str, str]:
 
 
 class UkrposhtaClassifierClient:
-    def __init__(self, bearer_token: str, cache_store: CacheStore, ttl_days: int = 30) -> None:
+    def __init__(self, bearer_token: str, cache_store: CacheStore, ttl_days: int = 30, max_retries: int = 4) -> None:
         self.bearer_token = bearer_token
         self.cache_store = cache_store
         self.ttl_days = ttl_days
+        self.max_retries = max_retries
 
     def _build_cache_key(self, endpoint: str, params: dict[str, str]) -> str:
         payload = f"{endpoint}|{urlencode(sorted(params.items()))}"
@@ -45,8 +48,24 @@ class UkrposhtaClassifierClient:
 
         url = f"{BASE_URL}/{endpoint}?{urlencode(params)}"
         request = Request(url, headers={"Authorization": f"Bearer {self.bearer_token}"})
-        with urlopen(request, timeout=60) as response:
-            body = response.read().decode("utf-8")
+        last_error: Exception | None = None
+        for attempt in range(self.max_retries):
+            try:
+                with urlopen(request, timeout=60) as response:
+                    body = response.read().decode("utf-8")
+                break
+            except HTTPError as error:
+                last_error = error
+                if error.code not in (429, 500, 502, 503, 504) or attempt + 1 >= self.max_retries:
+                    raise
+                time.sleep(1.5 * (attempt + 1))
+            except URLError as error:
+                last_error = error
+                if attempt + 1 >= self.max_retries:
+                    raise
+                time.sleep(1.5 * (attempt + 1))
+        else:
+            raise RuntimeError(f"Classifier request failed after retries: {endpoint} {params}") from last_error
         self.cache_store.set_response(cache_key, endpoint, params, body)
         return body
 
@@ -145,4 +164,3 @@ class UkrposhtaClassifierClient:
             self._request(endpoint, params, refresh=True)
             refreshed += 1
         return refreshed
-
