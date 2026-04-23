@@ -44,13 +44,13 @@ def parse_raw_address(raw_address: str, postcode: str = "") -> ParsedAddress:
 
     for token in tokens:
         lowered = token.lower()
-        if not region and ("\u043e\u0431\u043b" in lowered or lowered.endswith("\u0441\u044c\u043a\u0430")):
+        if not region and _is_region_token(token):
             region = token.replace("\u043e\u0431\u043b.", "").replace("\u043e\u0431\u043b\u0430\u0441\u0442\u044c", "").strip()
             continue
-        if not district and ("\u0440\u0430\u0439\u043e\u043d" in lowered or "\u0440-\u043d" in lowered or lowered.endswith("\u0441\u044c\u043a\u0438\u0439")):
+        if not district and not _is_street_token(token) and _is_district_token(token):
             district = token.replace("\u0440\u0430\u0439\u043e\u043d", "").replace("\u0440-\u043d", "").strip(" ,")
             continue
-        if not city and any(marker in lowered for marker in CITY_MARKERS):
+        if not city and _has_explicit_city_marker(token):
             city = re.sub(
                 r"^(\u043c\u0456\u0441\u0442\u043e|\u0441\u0435\u043b\u0438\u0449\u0435|\u0441\u0435\u043b\u043e|\u0441\u043c\u0442\.?|\u043c\.?|\u0441\.?)\s*",
                 "",
@@ -60,8 +60,7 @@ def parse_raw_address(raw_address: str, postcode: str = "") -> ParsedAddress:
             continue
 
     for token in tokens:
-        lowered = token.lower()
-        if not street and any(prefix in lowered for prefix in STREET_PREFIXES):
+        if not street and _is_street_token(token):
             street = token
             continue
         if not house_number:
@@ -129,7 +128,7 @@ def _extract_postcode(value: str) -> str:
 
 def _strip_street_prefix(value: str) -> str:
     value = re.sub(
-        r"^(\u0432\u0443\u043b\u0438\u0446\u044f|\u0432\u0443\u043b\.?|\u0443\u043b\u0438\u0446\u0430|\u0443\u043b\.?|\u043f\u0440\u043e\u0441\u043f\u0435\u043a\u0442|\u043f\u0440\u043e\u0441\u043f\.?|\u043f\u0440\u043e\u0432\u0443\u043b\u043e\u043a|\u043f\u0440\u043e\u0432\.?|\u043f\u0440\u0432\.?|\u0431\u0443\u043b\u044c\u0432\u0430\u0440|\u0431\u0443\u043b\.?|\u0443\u0437\u0432\u0456\u0437|\u0448\u043e\u0441\u0435|\u043d\u0430\u0431\u0435\u0440\u0435\u0436\u043d\u0430)\s+",
+        r"^(\u0432\u0443\u043b\u0438\u0446\u044f|\u0432\u0443\u043b\.?|\u0443\u043b\u0438\u0446\u0430|\u0443\u043b\.?|\u043f\u0440\u043e\u0441\u043f\u0435\u043a\u0442|\u043f\u0440\u043e\u0441\u043f\.?|\u043f\u0440\u043e\u0432\u0443\u043b\u043e\u043a|\u043f\u0440\u043e\u0432\.?|\u043f\u0440\u0432\.?|\u0431\u0443\u043b\u044c\u0432\u0430\u0440|\u0431\u0443\u043b\.?|\u0443\u0437\u0432\u0456\u0437|\u0448\u043e\u0441\u0435|\u043d\u0430\u0431\u0435\u0440\u0435\u0436\u043d\u0430)[\s.]*",
         "",
         value,
         flags=re.IGNORECASE,
@@ -198,9 +197,58 @@ def _parse_location_tail(
                 words = words[:-1]
 
         if words and not local_city:
-            local_city = " ".join(words)
+            local_city = _collapse_duplicate_tail_words(words)
 
         if local_city or local_district or local_region:
             return local_city, local_district, local_region
 
     return city, district, region
+
+
+def _has_explicit_city_marker(token: str) -> bool:
+    return bool(
+        re.match(
+            r"^\s*(\u043c\u0456\u0441\u0442\u043e|\u0441\u0435\u043b\u0438\u0449\u0435|\u0441\u0435\u043b\u043e|\u0441\u043c\u0442\.?|\u043c\.?|\u0441\.?)\s+",
+            token,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _is_street_token(token: str) -> bool:
+    lowered = token.lower().lstrip()
+    return any(
+        lowered.startswith(prefix)
+        or lowered.startswith(f"{prefix}.")
+        or lowered.startswith(f"{prefix} ")
+        for prefix in STREET_PREFIXES
+    )
+
+
+def _is_region_token(token: str) -> bool:
+    lowered = normalize_spaces(token).lower()
+    words = lowered.split()
+    if "\u043e\u0431\u043b" in lowered:
+        return len(words) <= 2
+    return len(words) == 1 and words[-1].endswith("\u0441\u044c\u043a\u0430")
+
+
+def _is_district_token(token: str) -> bool:
+    lowered = normalize_spaces(token).lower()
+    words = lowered.split()
+    if "\u0440\u0430\u0439\u043e\u043d" in lowered or "\u0440-\u043d" in lowered:
+        return len(words) <= 2
+    if len(words) != 1:
+        return False
+    last_word = words[-1]
+    return (
+        last_word.endswith("\u0441\u044c\u043a\u0438\u0439")
+        or last_word.endswith("\u0446\u044c\u043a\u0438\u0439")
+        or last_word.endswith("\u0437\u044c\u043a\u0438\u0439")
+    )
+
+
+def _collapse_duplicate_tail_words(words: list[str]) -> str:
+    if len(words) >= 2 and all(word.lower() == words[0].lower() for word in words):
+        return words[0]
+    return " ".join(words)

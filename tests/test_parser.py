@@ -22,3 +22,27 @@ def test_parse_address_strips_extras() -> None:
     assert parsed.street == "\u0420\u043e\u0441\u0442\u0438\u0441\u043b\u0430\u0432\u0441\u044c\u043a\u0430"
     assert parsed.house_number == "5\u0411"
     assert "\u0416\u041a \u0406\u043b\u0456\u0437\u0456\u0443\u043c" in parsed.extras
+
+
+def test_parse_address_location_tail_without_city_marker() -> None:
+    parsed = parse_raw_address(
+        "\u0432\u0443\u043b.\u0421\u0442\u0435\u043f\u043e\u0432\u0430, \u0431\u0443\u0434.1, \u043a\u0432. \u0417\u043e\u0440\u044f \u041a\u0440\u0438\u043d\u0438\u0447\u0430\u043d\u0441\u044c\u043a\u0438\u0439 \u0414\u043d\u0456\u043f\u0440\u043e\u043f\u0435\u0442\u0440\u043e\u0432\u0441\u044c\u043a\u0430",
+        "52339",
+    )
+    assert parsed.city == "\u0417\u043e\u0440\u044f"
+    assert parsed.district == "\u041a\u0440\u0438\u043d\u0438\u0447\u0430\u043d\u0441\u044c\u043a\u0438\u0439"
+    assert parsed.region == "\u0414\u043d\u0456\u043f\u0440\u043e\u043f\u0435\u0442\u0440\u043e\u0432\u0441\u044c\u043a\u0430"
+    assert parsed.street == "\u0421\u0442\u0435\u043f\u043e\u0432\u0430"
+    assert parsed.house_number == "1"
+
+
+def test_parse_address_with_apartment_stuck_to_city_tail() -> None:
+    parsed = parse_raw_address(
+        "\u0432\u0443\u043b.\u0421\u0432\u043e\u0431\u043e\u0434\u0438, \u0431\u0443\u0434.35, \u043a\u0432.16 \u0423\u0436\u0433\u043e\u0440\u043e\u0434 \u0417\u0430\u043a\u0430\u0440\u043f\u0430\u0442\u0441\u044c\u043a\u0430",
+        "88000",
+    )
+    assert parsed.city == "\u0423\u0436\u0433\u043e\u0440\u043e\u0434"
+    assert parsed.region == "\u0417\u0430\u043a\u0430\u0440\u043f\u0430\u0442\u0441\u044c\u043a\u0430"
+    assert parsed.street == "\u0421\u0432\u043e\u0431\u043e\u0434\u0438"
+    assert parsed.house_number == "35"
+    assert parsed.apartment_number == "16"

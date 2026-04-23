@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 import hashlib
 from pathlib import Path
+import socket
 import time
 from typing import Iterable
 from urllib.parse import urlencode
@@ -59,7 +60,7 @@ class UkrposhtaClassifierClient:
                 if error.code not in (429, 500, 502, 503, 504) or attempt + 1 >= self.max_retries:
                     raise
                 time.sleep(1.5 * (attempt + 1))
-            except URLError as error:
+            except (URLError, TimeoutError, socket.timeout) as error:
                 last_error = error
                 if attempt + 1 >= self.max_retries:
                     raise

@@ -29,6 +29,7 @@ class AddressMatcher:
             return cached
 
         parsed = parse_raw_address(raw_address, postcode=input_postcode)
+        ai_parsed: ParsedAddress | None = None
         postcode_candidates = self.classifier_client.get_addresses_by_postcode(input_postcode) if input_postcode else []
         postcode_state = "postcode_invalid"
         warnings: list[str] = []
@@ -48,7 +49,7 @@ class AddressMatcher:
                 )
                 self._store_cached_result(raw_address, input_postcode, result)
                 return result
-            refined_locked = self._search_with_locked_postcode(parsed, input_postcode, postcode_candidates)
+            refined_locked = self._search_with_locked_postcode(parsed, input_postcode, postcode_candidates, raw_address)
             if refined_locked is not None:
                 result = self._result_from_candidate(
                     parsed=parsed,
@@ -74,7 +75,26 @@ class AddressMatcher:
                 used_ai = True
                 warnings.append("ai fallback used for normalization")
 
-        recovered = self._search_without_locked_postcode(expanded_parsed)
+        recovered = self._search_without_locked_postcode(expanded_parsed, raw_address)
+        if recovered is None and self.use_ai and self.ai_client:
+            if ai_parsed is None:
+                ai_parsed = self.ai_client.normalize_address(raw_address, input_postcode)
+            if ai_parsed:
+                retry_parsed = self._prefer_ai_parsed(expanded_parsed, ai_parsed)
+                if self._parsed_changed(expanded_parsed, retry_parsed):
+                    expanded_parsed = retry_parsed
+                    used_ai = True
+                    if "ai fallback used for normalization" not in warnings:
+                        warnings.append("ai fallback used for normalization")
+                    if postcode_candidates:
+                        recovered = self._search_with_locked_postcode(
+                            expanded_parsed,
+                            input_postcode,
+                            postcode_candidates,
+                            raw_address,
+                        )
+                    if recovered is None:
+                        recovered = self._search_without_locked_postcode(expanded_parsed, raw_address)
         if recovered is not None:
             status = "postcode_corrected" if recovered.postcode != input_postcode else "verified_fuzzy"
             result = self._result_from_candidate(
@@ -160,14 +180,39 @@ class AddressMatcher:
             extras=base.extras,
         )
 
+    def _prefer_ai_parsed(self, base: ParsedAddress, ai_value: ParsedAddress) -> ParsedAddress:
+        return ParsedAddress(
+            postcode=base.postcode or ai_value.postcode,
+            region=ai_value.region or base.region,
+            district=ai_value.district or base.district,
+            city=ai_value.city or base.city,
+            street=ai_value.street or base.street,
+            house_number=ai_value.house_number or base.house_number,
+            apartment_number=base.apartment_number or ai_value.apartment_number,
+            extras=base.extras,
+        )
+
+    def _parsed_changed(self, left: ParsedAddress, right: ParsedAddress) -> bool:
+        return (
+            left.region != right.region
+            or left.district != right.district
+            or left.city != right.city
+            or left.street != right.street
+            or left.house_number != right.house_number
+            or left.apartment_number != right.apartment_number
+        )
+
     def _best_from_postcode(self, parsed: ParsedAddress, candidates: list[AddressCandidate]) -> AddressCandidate | None:
         scored = [(self._score_candidate(parsed, candidate, locked=True), candidate) for candidate in candidates]
         scored.sort(key=lambda item: item[0], reverse=True)
-        if not scored or scored[0][0] < 60:
+        if not scored:
+            return None
+        min_score = 90 if parsed.house_number else 60
+        if scored[0][0] < min_score:
             return None
         return scored[0][1]
 
-    def _search_without_locked_postcode(self, parsed: ParsedAddress) -> AddressCandidate | None:
+    def _search_without_locked_postcode(self, parsed: ParsedAddress, raw_address: str) -> AddressCandidate | None:
         if not parsed.city:
             return None
         city_candidates = self.classifier_client.get_cities_by_name(parsed.city)
@@ -191,6 +236,14 @@ class AddressMatcher:
                 continue
             streets = self.classifier_client.get_streets_by_name(city.city_id, parsed.street)
             street = self._pick_best_street(parsed, streets)
+            if street is None and self.use_ai and self.ai_client and streets:
+                street = self.ai_client.select_street_candidate(
+                    raw_address=raw_address,
+                    postcode=parsed.postcode,
+                    parsed_city=parsed.city,
+                    parsed_street=parsed.street,
+                    candidates=streets,
+                )
             if street is None:
                 continue
             houses = self.classifier_client.get_houses_by_street_id(street.street_id)
@@ -222,6 +275,7 @@ class AddressMatcher:
         parsed: ParsedAddress,
         input_postcode: str,
         postcode_candidates: list[AddressCandidate],
+        raw_address: str,
     ) -> AddressCandidate | None:
         if not postcode_candidates:
             return None
@@ -253,6 +307,14 @@ class AddressMatcher:
                 continue
             streets = self.classifier_client.get_streets_by_name(sample.city_id, parsed.street)
             street = self._pick_best_street(parsed, streets)
+            if street is None and self.use_ai and self.ai_client and streets:
+                street = self.ai_client.select_street_candidate(
+                    raw_address=raw_address,
+                    postcode=input_postcode,
+                    parsed_city=sample.city,
+                    parsed_street=parsed.street,
+                    candidates=streets,
+                )
             if street is None:
                 continue
             houses = self.classifier_client.get_houses_by_street_id(street.street_id)
@@ -354,6 +416,10 @@ class AddressMatcher:
                 score += 80
             elif normalize_for_compare(street.old_street) == normalize_for_compare(parsed.street):
                 score += 75
+            elif self._contains_same_street(street.street, parsed.street):
+                score += 70
+            elif self._contains_same_street(street.old_street, parsed.street):
+                score += 68
             if parsed.city and normalize_for_compare(street.city) == normalize_for_compare(parsed.city):
                 score += 20
             scored.append((score, street))
@@ -381,6 +447,14 @@ class AddressMatcher:
         ]
         if near:
             return near[0]
+        base_input = self._house_base_number(normalized_input)
+        same_base = [
+            item
+            for item in houses
+            if self._house_base_number(normalize_house_number(item[0])) == base_input
+        ]
+        if same_base:
+            return sorted(same_base, key=lambda item: normalize_house_number(item[0]))[0]
         return None
 
     def _fallback_house(self, houses: list[tuple[str, str]]) -> tuple[str, str]:
@@ -405,6 +479,10 @@ class AddressMatcher:
             score += 25
         elif parsed.street and normalize_for_compare(candidate.old_street) == normalize_for_compare(parsed.street):
             score += 22
+        elif parsed.street and self._contains_same_street(candidate.street, parsed.street):
+            score += 22
+        elif parsed.street and self._contains_same_street(candidate.old_street, parsed.street):
+            score += 20
         if parsed.house_number and normalize_house_number(candidate.house_number) == normalize_house_number(parsed.house_number):
             score += 15
         elif parsed.house_number and normalize_house_number_loose(candidate.house_number) == normalize_house_number_loose(parsed.house_number):
@@ -416,7 +494,10 @@ class AddressMatcher:
         return score
 
     def _status_from_candidate(self, parsed: ParsedAddress, candidate: AddressCandidate, locked: bool) -> str:
-        if candidate.old_street and normalize_for_compare(candidate.old_street) == normalize_for_compare(parsed.street):
+        if candidate.old_street and (
+            normalize_for_compare(candidate.old_street) == normalize_for_compare(parsed.street)
+            or self._contains_same_street(candidate.old_street, parsed.street)
+        ):
             return "verified_old_name"
         if locked:
             return "postcode_verified"
@@ -462,7 +543,11 @@ class AddressMatcher:
             if normalize_for_compare(parsed.city) != normalize_for_compare(candidate.old_city):
                 deviation += 25
         if parsed.street and normalize_for_compare(parsed.street) != normalize_for_compare(candidate.street):
-            if normalize_for_compare(parsed.street) != normalize_for_compare(candidate.old_street):
+            if (
+                normalize_for_compare(parsed.street) != normalize_for_compare(candidate.old_street)
+                and not self._contains_same_street(candidate.street, parsed.street)
+                and not self._contains_same_street(candidate.old_street, parsed.street)
+            ):
                 deviation += 25
         if parsed.house_number and normalize_house_number(parsed.house_number) != normalize_house_number(candidate.house_number):
             if normalize_house_number_loose(parsed.house_number) != normalize_house_number_loose(candidate.house_number):
@@ -470,6 +555,23 @@ class AddressMatcher:
         if forced_fill:
             deviation = max(deviation, 60)
         return min(100, deviation)
+
+    def _contains_same_street(self, left: str, right: str) -> bool:
+        normalized_left = normalize_for_compare(left)
+        normalized_right = normalize_for_compare(right)
+        if not normalized_left or not normalized_right:
+            return False
+        return normalized_left in normalized_right or normalized_right in normalized_left
+
+    def _house_base_number(self, value: str) -> str:
+        digits = []
+        for char in value:
+            if char.isdigit():
+                digits.append(char)
+                continue
+            if digits:
+                break
+        return "".join(digits)
 
     def _load_cached_result(self, raw_address: str, input_postcode: str) -> MatchResult | None:
         fingerprint = self.cache_store.build_final_fingerprint(raw_address, input_postcode)
