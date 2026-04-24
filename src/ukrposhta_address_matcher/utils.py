@@ -20,6 +20,8 @@ RU_TO_UA_MAP = {
     "\u043f\u0435\u0440\u0435\u0443\u043b\u043e\u043a": "\u043f\u0440\u043e\u0432\u0443\u043b\u043e\u043a",
     "\u043f\u0440\u043e\u0441\u043f\u0435\u043a\u0442": "\u043f\u0440\u043e\u0441\u043f\u0435\u043a\u0442",
     "\u0448\u043e\u0441\u0441\u0435": "\u0448\u043e\u0441\u0435",
+    "\u043a\u043e\u043c\u043d\u0430\u0442\u0430": "\u043a\u0456\u043c\u043d\u0430\u0442\u0430",
+    "\u043e\u0444\u0438\u0441": "\u043e\u0444\u0456\u0441",
 }
 
 CITY_MARKERS = [
@@ -94,7 +96,7 @@ def tokenize_address(value: str) -> list[str]:
 
 def extract_apartment(value: str) -> tuple[str, str]:
     match = re.search(
-        r"\b(?:\u043a\u0432\.?|\u043a\u0432\u0430\u0440\u0442\u0438\u0440\u0430)\s*([0-9][0-9A-Za-z\u0410-\u042f\u0430-\u044f\u0406\u0456\u0407\u0457\u0404\u0454\u0490\u0491/-]*)",
+        r"\b(?:\u043a\u0432\.?|\u043a\u0432\u0430\u0440\u0442\u0438\u0440\u0430|\u043a\u0456\u043c\u043d\u0430\u0442\u0430|\u043a\u0456\u043c\u043d\.?|\u043e\u0444\u0456\u0441|\u043e\u0444\.?)\s*([0-9][0-9A-Za-z\u0410-\u042f\u0430-\u044f\u0406\u0456\u0407\u0457\u0404\u0454\u0490\u0491/-]*)",
         value,
         flags=re.IGNORECASE,
     )
@@ -103,6 +105,19 @@ def extract_apartment(value: str) -> tuple[str, str]:
     apartment = normalize_spaces(match.group(1)).upper()
     cleaned = (value[: match.start()] + " " + value[match.end() :]).strip()
     return normalize_spaces(cleaned), apartment
+
+
+def extract_po_box(value: str) -> tuple[str, str]:
+    match = re.search(
+        r"\b(?:\u0430/\u0441|\u0430\u0431\u043e\u043d\u0435\u043d\u0442(?:\u0441\u044c\u043a\u0430)?\s+\u0441\u043a\u0440\u0438\u043d\u044c\u043a\u0430|\u043f/\u0441)\s*([0-9][0-9A-Za-z\u0410-\u042f\u0430-\u044f\u0406\u0456\u0407\u0457\u0404\u0454\u0490\u0491/-]*)",
+        value,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return value, ""
+    po_box = normalize_spaces(match.group(1)).upper()
+    cleaned = (value[: match.start()] + " " + value[match.end() :]).strip()
+    return normalize_spaces(cleaned), po_box
 
 
 def choose_most_common(values: list[str]) -> str:

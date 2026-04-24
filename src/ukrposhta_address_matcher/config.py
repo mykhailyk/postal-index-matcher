@@ -5,6 +5,13 @@ from pathlib import Path
 import os
 
 
+def _default_cache_path() -> str:
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        return str(Path(local_app_data) / "ukrposhta-address-matcher" / "classifier-cache.sqlite")
+    return str(Path.home() / ".cache" / "ukrposhta-address-matcher" / "classifier-cache.sqlite")
+
+
 def _load_env_file(env_path: Path) -> dict[str, str]:
     data: dict[str, str] = {}
     if not env_path.exists():
@@ -22,6 +29,8 @@ def _load_env_file(env_path: Path) -> dict[str, str]:
 class Settings:
     ukrposhta_bearer_token: str
     gemini_api_key: str
+    classifier_cache_path: str
+    classifier_match_workers: int
     classifier_refresh_hour: int
     classifier_refresh_minute: int
     classifier_refresh_tz: str
@@ -37,9 +46,10 @@ class Settings:
         return cls(
             ukrposhta_bearer_token=get("UKRPOSHTA_BEARER_TOKEN"),
             gemini_api_key=get("GEMINI_API_KEY"),
+            classifier_cache_path=get("CLASSIFIER_CACHE_PATH", _default_cache_path()),
+            classifier_match_workers=max(1, int(get("CLASSIFIER_MATCH_WORKERS", "4"))),
             classifier_refresh_hour=int(get("CLASSIFIER_REFRESH_HOUR", "3")),
             classifier_refresh_minute=int(get("CLASSIFIER_REFRESH_MINUTE", "0")),
             classifier_refresh_tz=get("CLASSIFIER_REFRESH_TZ", "Europe/Kyiv"),
             github_username=get("GITHUB_USERNAME", "mykhailyk"),
         )
-

@@ -83,3 +83,37 @@ def write_report(path: str | Path, rows: list[RegistryRow], results: dict[int, M
                     result.candidate_count,
                 ]
             )
+
+
+def write_postcode_unresolved_report(path: str | Path, rows: list[RegistryRow], results: dict[int, MatchResult]) -> int:
+    unresolved_rows = [row for row in rows if results[row.line_no].postcode_state == "postcode_unresolved"]
+    if not unresolved_rows:
+        target = Path(path)
+        if target.exists():
+            target.unlink()
+        return 0
+    with Path(path).open("w", encoding="utf-8", newline="") as file_obj:
+        writer = csv.writer(file_obj)
+        writer.writerow(
+            [
+                "line_no",
+                "input_postcode",
+                "original_address",
+                "status",
+                "postcode_state",
+                "warnings",
+            ]
+        )
+        for row in unresolved_rows:
+            result = results[row.line_no]
+            writer.writerow(
+                [
+                    row.line_no,
+                    result.input_postcode,
+                    row.raw_address,
+                    result.status,
+                    result.postcode_state,
+                    " | ".join(result.warnings),
+                ]
+            )
+    return len(unresolved_rows)

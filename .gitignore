@@ -6,12 +6,13 @@ __pycache__/
 *.pyd
 .pytest_cache/
 .mypy_cache/
+.review-ui-data/
 *.sqlite
 *.sqlite3
 report.csv
 output*.txt
+tmp_*
 tmp/
 dist/
 build/
 *.egg-info/
-

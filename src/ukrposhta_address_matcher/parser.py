@@ -6,6 +6,7 @@ from ukrposhta_address_matcher.models import ParsedAddress
 from ukrposhta_address_matcher.utils import (
     CITY_MARKERS,
     extract_apartment,
+    extract_po_box,
     normalize_ru_to_ua_tokens,
     normalize_spaces,
     sanitize_extras,
@@ -34,6 +35,7 @@ def parse_raw_address(raw_address: str, postcode: str = "") -> ParsedAddress:
     cleaned = normalize_ru_to_ua_tokens(raw_address)
     cleaned, extras = sanitize_extras(cleaned)
     cleaned, apartment = extract_apartment(cleaned)
+    cleaned, po_box_number = extract_po_box(cleaned)
     tokens = tokenize_address(cleaned)
 
     city = ""
@@ -61,7 +63,9 @@ def parse_raw_address(raw_address: str, postcode: str = "") -> ParsedAddress:
 
     for token in tokens:
         if not street and _is_street_token(token):
-            street = token
+            street, embedded_house_number = _split_street_and_house(token)
+            if embedded_house_number and not house_number:
+                house_number = embedded_house_number
             continue
         if not house_number:
             match = HOUSE_PATTERN.search(token)
@@ -71,9 +75,11 @@ def parse_raw_address(raw_address: str, postcode: str = "") -> ParsedAddress:
     if not city:
         city, district, region = _parse_location_tail(tokens, city=city, district=district, region=region, street=street)
 
-    if not street:
+    if not street and not po_box_number:
         for token in tokens:
             if token == city:
+                continue
+            if _is_po_box_token(token):
                 continue
             if any(part in token.lower() for part in ["\u043e\u0431\u043b", "\u0440\u0430\u0439\u043e\u043d", "\u0440-\u043d"]):
                 continue
@@ -81,13 +87,19 @@ def parse_raw_address(raw_address: str, postcode: str = "") -> ParsedAddress:
                 continue
             if HOUSE_PATTERN.search(token) and len(tokens) == 1:
                 continue
-            street = token
+            street, embedded_house_number = _split_street_and_house(token)
+            if embedded_house_number and not house_number:
+                house_number = embedded_house_number
+            if not street:
+                street = token
             break
 
     if not city:
         for token in reversed(tokens):
             lowered = token.lower()
             if any(prefix in lowered for prefix in STREET_PREFIXES):
+                continue
+            if _is_po_box_token(token):
                 continue
             if HOUSE_PATTERN.search(token):
                 continue
@@ -96,7 +108,7 @@ def parse_raw_address(raw_address: str, postcode: str = "") -> ParsedAddress:
             city = token
             break
 
-    if not house_number:
+    if not house_number and not po_box_number:
         match = HOUSE_PATTERN.search(cleaned)
         if match:
             house_number = match.group(1)
@@ -118,6 +130,7 @@ def parse_raw_address(raw_address: str, postcode: str = "") -> ParsedAddress:
         house_number=house_number,
         apartment_number=apartment,
         extras=extras,
+        po_box_number=po_box_number,
     )
 
 
@@ -208,7 +221,7 @@ def _parse_location_tail(
 def _has_explicit_city_marker(token: str) -> bool:
     return bool(
         re.match(
-            r"^\s*(\u043c\u0456\u0441\u0442\u043e|\u0441\u0435\u043b\u0438\u0449\u0435|\u0441\u0435\u043b\u043e|\u0441\u043c\u0442\.?|\u043c\.?|\u0441\.?)\s+",
+            r"^\s*(\u043c\u0456\u0441\u0442\u043e|\u0441\u0435\u043b\u0438\u0449\u0435|\u0441\u0435\u043b\u043e|\u0441\u043c\u0442\.?|\u043c\.?|\u0441\.?)\s*(?=\S)",
             token,
             flags=re.IGNORECASE,
         )
@@ -252,3 +265,23 @@ def _collapse_duplicate_tail_words(words: list[str]) -> str:
     if len(words) >= 2 and all(word.lower() == words[0].lower() for word in words):
         return words[0]
     return " ".join(words)
+
+
+def _split_street_and_house(token: str) -> tuple[str, str]:
+    if not _is_street_token(token):
+        return normalize_spaces(token), ""
+    match = re.search(
+        r"(?:,\s*|\s+)(?:\u0431\u0443\u0434\.?|\u0431\u0443\u0434\u0438\u043d\u043e\u043a|\u0431\.?|\u0434\.?|\u0434\u043e\u043c)?\s*([0-9]+[0-9A-Za-z\u0410-\u042f\u0430-\u044f\u0406\u0456\u0407\u0457\u0404\u0454\u0490\u0491/-]*)\s*$",
+        token,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return normalize_spaces(token), ""
+    street = normalize_spaces(token[: match.start()])
+    house_number = normalize_spaces(match.group(1)).upper()
+    return street, house_number
+
+
+def _is_po_box_token(token: str) -> bool:
+    lowered = normalize_spaces(token).lower()
+    return lowered.startswith(("\u0430/\u0441", "\u043f/\u0441", "\u0430\u0431\u043e\u043d\u0435\u043d\u0442\u0441\u044c\u043a\u0430 \u0441\u043a\u0440\u0438\u043d\u044c\u043a\u0430"))

@@ -15,8 +15,9 @@ license = { text = "Proprietary" }
 dependencies = []
 
 [project.scripts]
-match-registry = "ukrposhta_address_matcher.cli:main"
-refresh-cache = "ukrposhta_address_matcher.cli:main"
+match-registry = "ukrposhta_address_matcher.cli:match_registry_main"
+refresh-cache = "ukrposhta_address_matcher.cli:refresh_cache_main"
+review-ui = "ukrposhta_address_matcher.cli:review_ui_main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -24,3 +25,5 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+ukrposhta_address_matcher = ["web/*.html", "web/*.js", "web/*.css"]

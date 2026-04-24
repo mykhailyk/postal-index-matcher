@@ -96,6 +96,21 @@ class StreetCandidate:
 
 
 @dataclass(slots=True)
+class PostOfficeCandidate:
+    postoffice_id: str
+    postcode: str
+    city_id: str
+    city: str
+    city_type_short: str
+    street: str
+    house_number: str
+    lock_code: str = ""
+    is_security: bool = False
+    type_acronym: str = ""
+    type_long: str = ""
+
+
+@dataclass(slots=True)
 class MatchResult:
     structured_address: StructuredAddress
     status: str
@@ -119,3 +134,4 @@ class ParsedAddress:
     house_number: str = ""
     apartment_number: str = ""
     extras: list[str] = field(default_factory=list)
+    po_box_number: str = ""

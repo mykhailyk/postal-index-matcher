@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Ручна перевірка адрес</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">Ukrposhta Address Matcher</p>
+        <h1>Ручна перевірка адрес</h1>
+      </div>
+      <p class="header-note">Локальний human-in-the-loop інтерфейс для спірних рядків.</p>
+    </header>
+
+    <main class="layout">
+      <section class="panel upload-panel">
+        <h2>Новий пакет</h2>
+        <form id="upload-form" class="upload-form">
+          <input id="file-input" name="file" type="file" accept=".txt" required>
+          <button type="submit">Завантажити і обробити</button>
+        </form>
+        <p id="upload-status" class="muted"></p>
+      </section>
+
+      <section class="panel recent-panel">
+        <div class="panel-header">
+          <h2>Останні пакети</h2>
+          <button id="refresh-batches" class="secondary">Оновити список</button>
+        </div>
+        <div id="recent-batches" class="recent-list empty-state">Ще немає пакетів.</div>
+      </section>
+
+      <section class="panel summary-panel">
+        <div class="panel-header">
+          <h2>Поточний пакет</h2>
+          <div class="actions">
+            <button id="download-auto" class="secondary" disabled>Завантажити auto-result</button>
+            <button id="download-log" class="secondary" disabled>Завантажити лог review</button>
+            <button id="download-final" disabled>Завантажити фінальний TXT</button>
+          </div>
+        </div>
+        <div id="batch-summary" class="empty-state">Оберіть пакет або завантажте новий файл.</div>
+      </section>
+
+      <section class="panel queue-panel">
+        <div class="panel-header">
+          <h2>Черга перевірки</h2>
+          <div class="filters" id="queue-filters">
+            <button data-filter="all" class="filter active">Усі</button>
+            <button data-filter="review" class="filter">Review</button>
+            <button data-filter="hard_stop" class="filter">Hard Stop</button>
+            <button data-filter="pending" class="filter">Лише без рішення</button>
+          </div>
+        </div>
+        <div class="queue-layout">
+          <div id="queue-list" class="queue-list empty-state">Немає активної черги.</div>
+          <div id="row-detail" class="detail-view empty-state">Оберіть рядок у черзі.</div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
