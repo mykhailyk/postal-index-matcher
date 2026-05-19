@@ -8,7 +8,7 @@ UIStateManager - управління станом інтерфейсу
 - Відображення статусів
 """
 
-from typing import Optional, Dict, Callable
+from typing import Optional, Dict
 from PyQt5.QtGui import QColor
 from PyQt5.QtCore import QObject, pyqtSignal
 

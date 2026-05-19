@@ -2,7 +2,7 @@
 Модель запису з magistral.csv
 """
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import List
 
 
 @dataclass

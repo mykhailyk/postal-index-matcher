@@ -2,7 +2,6 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QSpinBox, QGroupBox
 )
-from PyQt5.QtCore import Qt
 import config
 
 

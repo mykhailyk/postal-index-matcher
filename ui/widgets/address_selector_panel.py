@@ -335,6 +335,15 @@ class AddressSelectorPanel(QWidget):
         self.city_completer.setCaseSensitivity(Qt.CaseInsensitive)
         self.city_completer.setFilterMode(Qt.MatchContains)
         self.city_input.setCompleter(self.city_completer)
+
+    def attach_magistral_cache(self, magistral_records):
+        """Attach loaded magistral data without rebuilding heavy UI completers."""
+        self.magistral_cache = magistral_records
+        self.ukr_index.magistral_cache = magistral_records
+
+        # The compact Ukrposhta index is enough for the cascade city/street search.
+        # Avoid rebuilding completer lists on startup; that work freezes the UI.
+        self.ukr_index.load()
     
     # ==================== КАСКАДНА ФОРМА (УКРПОШТА) ====================
     

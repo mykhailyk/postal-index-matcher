@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-    QComboBox, QCheckBox, QMessageBox
+    QComboBox, QCheckBox
 )
 from PyQt5.QtCore import pyqtSignal
 from ui.styles import AppStyles

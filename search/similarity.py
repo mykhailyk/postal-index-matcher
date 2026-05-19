@@ -1,9 +1,6 @@
 """
 Алгоритми для обчислення схожості тексту
 """
-from typing import Tuple
-
-
 class SimilarityCalculator:
     """Клас для обчислення схожості між текстами"""
     

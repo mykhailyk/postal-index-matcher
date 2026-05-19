@@ -6,11 +6,11 @@ import os
 import pandas as pd
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
-    QPushButton, QLabel, QTableWidget, QTableWidgetItem, QMessageBox, 
-    QProgressBar, QHeaderView, QAbstractItemView, QFrame, 
-    QComboBox, QShortcut, QApplication, QCheckBox, QSpinBox
+    QPushButton, QLabel, QTableWidgetItem, QMessageBox,
+    QProgressBar, QHeaderView, QAbstractItemView,
+    QShortcut, QApplication
 )
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QColor, QKeySequence
@@ -30,7 +30,6 @@ from ui.widgets.table_panel import TablePanel
 from utils.undo_manager import UndoManager
 from utils.settings_manager import SettingsManager
 from utils.logger import Logger
-from utils.address_parser import parse_full_address_text, is_full_address_in_text
 
 import config
 
@@ -105,8 +104,9 @@ class MainWindow(QMainWindow):
         self._setup_callbacks()
         self._setup_shortcuts()
         
-        # Запускаємо фонове завантаження кешу
-        self._start_background_cache_loading()
+        # Start cache loading after the first UI paint, so opening files and
+        # column mapping stay responsive immediately after launch.
+        QTimer.singleShot(1000, self._start_background_cache_loading)
         
         self.logger.info("GUI ініціалізовано")
     
@@ -402,12 +402,7 @@ class MainWindow(QMainWindow):
         """Запускає фонове завантаження кешу"""
         self.logger.info("=== ПОЧАТОК ФОНОВОГО ЗАВАНТАЖЕННЯ UKRPOSHTA CACHE ===")
         
-        # Завантажуємо magistral records синхронно (швидко)
-        self.search_manager.search_engine._ensure_loaded()
-        records = self.search_manager.get_magistral_records()
-        self.logger.info(f"Отримано {len(records) if records else 0} записів")
-        
-        # А AddressSelectorPanel завантажуємо у фоні
+        # Keep startup responsive: load magistral only in the worker thread.
         self.cache_thread = CacheLoaderThread(self.search_manager)
         self.cache_thread.progress.connect(self._on_cache_progress)
         self.cache_thread.finished.connect(self._on_cache_loaded)
@@ -425,7 +420,7 @@ class MainWindow(QMainWindow):
         if records and self.address_panel:
             self.logger.info(f"Передаємо {len(records):,} записів в AddressSelectorPanel...")
             print(f"\n📦 Передаємо {len(records):,} записів в AddressSelectorPanel...")
-            self.address_panel.set_magistral_cache(records)
+            self.address_panel.attach_magistral_cache(records)
             self.logger.info("AddressSelectorPanel ініціалізовано")
             print("✅ AddressSelectorPanel ініціалізовано\n")
             self._cache_loaded = True
@@ -473,12 +468,8 @@ class MainWindow(QMainWindow):
         }
         self.ui_state.disable_buttons_for_processing(buttons)
         
-        # Додаємо кнопку ЗУПИНИТИ
-        if not self.stop_btn:
-            self.stop_btn = QPushButton("⏹ ЗУПИНИТИ")
-            self.stop_btn.setStyleSheet(AppStyles.button_danger())
-            self.stop_btn.clicked.connect(self.stop_processing)
-            self.status_bar().addPermanentWidget(self.stop_btn)
+        if self.stop_btn:
+            self.stop_btn.setVisible(True)
     
     def _on_processing_finished_signal(self):
         """Обробка завершення обробки"""
@@ -493,11 +484,8 @@ class MainWindow(QMainWindow):
         }
         self.ui_state.enable_buttons_after_processing(buttons)
         
-        # Видаляємо кнопку ЗУПИНИТИ
         if self.stop_btn:
-            self.status_bar().removeWidget(self.stop_btn)
-            self.stop_btn.deleteLater()
-            self.stop_btn = None
+            self.stop_btn.setVisible(False)
     
     def _on_undo_redo_changed_signal(self):
         """Обробка зміни стану Undo/Redo"""
@@ -520,7 +508,7 @@ class MainWindow(QMainWindow):
             # ✅ FIX: Додаємо затримку для виділення рядка, щоб UI встиг оновитися
             QTimer.singleShot(50, lambda: self.table_panel.table.selectRow(row_idx))
     
-    def _on_row_processed(self, row_idx: int, index: str):
+    def _on_row_processed(self, row_idx: int, index: str, mode: str = 'auto'):
         """Колбек обробки рядка"""
         mapping = self.file_manager.excel_handler.column_mapping
         if mapping and 'index' in mapping:
@@ -541,6 +529,7 @@ class MainWindow(QMainWindow):
         
         # Показуємо результати
         address = self.file_manager.excel_handler.get_address_from_row(row_idx)
+        self.results_panel.set_current_address(address, row_idx + 1)
         self.results_panel.show_results(results, address.building or "")
         self.address_panel.populate_from_results(results)
         
@@ -604,8 +593,8 @@ class MainWindow(QMainWindow):
         )
         
         if success:
-            self.file_manager.current_file = file_path
-            self.ui_state.set_file_loaded(file_path)
+            saved_path = self.file_manager.current_file or file_path
+            self.ui_state.set_file_loaded(saved_path)
             self.ui_state.set_file_saved()
             QMessageBox.information(self, "Успіх", "Файл успішно збережено!")
         else:
@@ -666,6 +655,7 @@ class MainWindow(QMainWindow):
         
         try:
             address = self.file_manager.excel_handler.get_address_from_row(self.current_row)
+            self.results_panel.set_current_address(address, self.current_row + 1)
             result = self.search_manager.search_with_auto(address, auto_apply=False)
             
             if result['mode'] == 'auto':
@@ -696,6 +686,8 @@ class MainWindow(QMainWindow):
             return
         
         try:
+            was_semi_auto_waiting = self.processing_manager.semi_auto_waiting
+
             # ✅ ЗАПИСУЄМО ПРЯМО В DATAFRAME
             mapping = self.file_manager.excel_handler.column_mapping
             if not mapping or 'index' not in mapping:
@@ -703,6 +695,14 @@ class MainWindow(QMainWindow):
                 return
             
             idx_col = mapping['index'][0]
+            address_before = self.file_manager.excel_handler.get_address_from_row(self.current_row)
+            old_index = address_before.index
+
+            self.undo_manager.push({
+                'row': self.current_row,
+                'old_values': {'index': old_index},
+                'new_values': {'index': index}
+            })
             
             # ЗАПИСУЄМО В DATAFRAME
             self.file_manager.excel_handler.df.iloc[self.current_row, idx_col] = index
@@ -720,7 +720,6 @@ class MainWindow(QMainWindow):
             self.auto_applied_rows.add(self.current_row)
             
             # ЛОГУВАННЯ
-            address = self.file_manager.excel_handler.get_address_from_row(self.current_row)
             self.logger.info(f"✅ Застосовано індекс [{index}] на рядку {self.current_row + 1}")
             
             # ✅ ПЕРЕХОДИМО НА НАСТУПНИЙ
@@ -744,6 +743,7 @@ class MainWindow(QMainWindow):
                     
                     # ОЧИЩУЄМО РЕЗУЛЬТАТИ ПОШУКУ
                     self.results_panel.clear()
+                    self.results_panel.set_current_address(next_address, next_row + 1)
                     
                     self.logger.info(f"📋 Форма заповнена для рядка {next_row + 1}: {next_address.city}, {next_address.street}")
                     
@@ -752,8 +752,6 @@ class MainWindow(QMainWindow):
                     import traceback
                     self.logger.error(traceback.format_exc())
             
-            # UNDO/REDO
-            self.processing_manager.apply_index(self.current_row, index)
             self.ui_state.undo_redo_changed.emit()
             
             self.status_bar.setText(f"✅ Застосовано індекс {index}")
@@ -775,8 +773,11 @@ class MainWindow(QMainWindow):
                 self.table_panel.table.itemSelectionChanged.connect(self.on_row_selected)
                 self.logger.info(f"➡️ Перехід на рядок {next_row + 1}")
                 
-                # ✅ ДОДАНО: АВТОМАТИЧНИЙ ПОШУК НА НОВОМУ РЯДКУ
-                QTimer.singleShot(300, self.search_address)  # Затримка 300мс для оновлення форми
+                if was_semi_auto_waiting:
+                    QTimer.singleShot(100, self._continue_semi_auto)
+                else:
+                    # ✅ ДОДАНО: АВТОМАТИЧНИЙ ПОШУК НА НОВОМУ РЯДКУ
+                    QTimer.singleShot(300, self.search_address)  # Затримка 300мс для оновлення форми
                 
             else:
                 self.status_bar.setText("✅ Обробка завершена! Всі рядки оброблені.")
@@ -788,6 +789,14 @@ class MainWindow(QMainWindow):
                 self.address_panel.region_input.clear()
                 self.address_panel.index_input.clear()
                 self.results_panel.clear()
+                self.results_panel.set_current_address(None)
+
+                if was_semi_auto_waiting:
+                    self.processing_manager.semi_auto_waiting = False
+                    self.processing_manager.is_processing = False
+                    self.progress_bar.setVisible(False)
+                    self.table_panel.semi_auto_btn.setEnabled(True)
+                    self.table_panel.auto_process_btn.setEnabled(True)
         
         except Exception as e:
             self.logger.error(f"❌ Критична помилка в apply_index: {str(e)}")
@@ -1003,8 +1012,8 @@ class MainWindow(QMainWindow):
             return
         
         self.progress_bar.setVisible(True)
-        self.semi_auto_btn.setEnabled(False)
-        self.auto_process_btn.setEnabled(False)
+        self.table_panel.semi_auto_btn.setEnabled(False)
+        self.table_panel.auto_process_btn.setEnabled(False)
         
         total_rows = len(self.file_manager.excel_handler.df)
         self.processing_manager.on_progress_update = self.update_progress
@@ -1019,14 +1028,14 @@ class MainWindow(QMainWindow):
             if not self.processing_manager.semi_auto_waiting:
                 self.show_processing_stats(stats)
                 self.progress_bar.setVisible(False)
-                self.semi_auto_btn.setEnabled(True)
-                self.auto_process_btn.setEnabled(True)
+                self.table_panel.semi_auto_btn.setEnabled(True)
+                self.table_panel.auto_process_btn.setEnabled(True)
         except Exception as e:
             self.logger.error(f"Помилка: {e}")
             QMessageBox.critical(self, "Помилка", str(e))
             self.progress_bar.setVisible(False)
-            self.semi_auto_btn.setEnabled(True)
-            self.auto_process_btn.setEnabled(True)
+            self.table_panel.semi_auto_btn.setEnabled(True)
+            self.table_panel.auto_process_btn.setEnabled(True)
 
 
     def on_semi_auto_pause(self, row_idx: int, results: List[Dict]):
@@ -1037,13 +1046,15 @@ class MainWindow(QMainWindow):
         self.table_panel.table.selectRow(row_idx)
         self.scroll_to_row(row_idx)
         self.current_row = row_idx
+        address = self.file_manager.excel_handler.get_address_from_row(row_idx)
+        self.results_panel.set_current_address(address, row_idx + 1)
         
         # Показуємо результати для вибору
         if results:
             self.results_panel.display_results(results)
             self.status_bar.setText(
                 f"⏸️  Обробка призупинена на рядку {row_idx + 1}. "
-                f"Оберіть результат вручну або натисніть 'Продовжити'"
+                f"Оберіть результат вручну - напівавто продовжиться з наступного рядка"
             )
         else:
             self.status_bar.setText(
@@ -1061,7 +1072,8 @@ class MainWindow(QMainWindow):
             self.ui_state.set_processing_state(False)
             self.show_processing_stats(stats)
             self.progress_bar.setVisible(False)
-            self.semi_auto_btn.setEnabled(True)
+            self.table_panel.semi_auto_btn.setEnabled(True)
+            self.table_panel.auto_process_btn.setEnabled(True)
     
     def stop_processing(self):
         """Зупинка обробки"""
@@ -1218,7 +1230,6 @@ class MainWindow(QMainWindow):
         
         # Імпортуємо функцію парсингу
         from utils.address_parser import parse_full_address_text, is_full_address_in_text
-        import pandas as pd
         
         df = self.file_manager.excel_handler.df
         parsed_count = 0
@@ -1278,7 +1289,7 @@ class MainWindow(QMainWindow):
                 
                 # Перевіряємо що витягли
                 if not parsed['city'] and not parsed['street']:
-                    print(f"   ⚠️ ПРОПУЩЕНО: не вдалося витягти місто та вулицю")
+                    print("   ⚠️ ПРОПУЩЕНО: не вдалося витягти місто та вулицю")
                     continue
                 
                 # Записуємо в DataFrame
@@ -1310,12 +1321,12 @@ class MainWindow(QMainWindow):
                 
                 if updated:
                     parsed_count += 1
-                    print(f"   ✅ ОНОВЛЕНО")
+                    print("   ✅ ОНОВЛЕНО")
                 else:
-                    print(f"   ⚠️ НЕ ОНОВЛЕНО (порожні дані)")
+                    print("   ⚠️ НЕ ОНОВЛЕНО (порожні дані)")
         
         print("\n" + "="*80)
-        print(f"🏁 ЗАВЕРШЕНО ПАРСИНГ")
+        print("🏁 ЗАВЕРШЕНО ПАРСИНГ")
         print(f"   Знайдено адрес у неправильному форматі: {detected_count}")
         print(f"   Успішно розпарсовано: {parsed_count}")
         print("="*80 + "\n")
@@ -1445,6 +1456,7 @@ class MainWindow(QMainWindow):
             self.table_panel.search_btn.setEnabled(False)
             self.table_panel.auto_process_btn.setEnabled(False)
             self.table_panel.semi_auto_btn.setEnabled(False)
+            self.results_panel.set_current_address(None)
             return
         
         self.current_row = selected_rows[0].row()
@@ -1458,6 +1470,7 @@ class MainWindow(QMainWindow):
         # Відображаємо оригінальні дані
         try:
             address = self.file_manager.excel_handler.get_address_from_row(self.current_row)
+            self.results_panel.set_current_address(address, self.current_row + 1)
             parts = []
             
             if address.region:
@@ -1609,21 +1622,6 @@ class MainWindow(QMainWindow):
             self.address_panel.cascade_city_list.hide()
         if hasattr(self.address_panel, 'cascade_street_list'):
             self.address_panel.cascade_street_list.hide()
-            
-            
-    def on_semi_auto_pause(self, row_idx: int, results: List[Dict]):
-        """Пауза напівавто"""
-        self.current_row = row_idx
-        self.table_panel.table.selectRow(row_idx)
-        self.scroll_to_row(row_idx)
-        
-        if results:
-            self.results_panel.display_results(results, highlight_first=False)
-            self.status_bar.setText(f"⏸️ Рядок {row_idx + 1} - оберіть результат")
-        else:
-            self.results_panel.clear()
-            self.status_bar.setText(f"⏸️ Рядок {row_idx + 1}: нічого не знайдено")
-
     def show_processing_stats(self, stats: Dict):
         """Показує статистику"""
         total = stats['total'] - stats['skipped']
@@ -1640,24 +1638,6 @@ class MainWindow(QMainWindow):
             f"Ефективність: {eff}%"
         )
         QMessageBox.information(self, "Статистика", msg)
-
-    def update_progress(self, current: int, total: int):
-        """Оновити прогрес"""
-        if total > 0:
-            self.progress_bar.setValue(int(current / total * 100))
-        self.status_bar.setText(f"⏳ {current} / {total}")
-        QApplication.processEvents()
-
-    def on_row_auto_processed(self, row_idx: int, index: str, mode: str):
-        """Колбек після обробки"""
-        mapping = self.file_manager.excel_handler.column_mapping
-        if mapping and 'index' in mapping:
-            idx_col = mapping['index'][0]
-            item = self.table.item(row_idx, idx_col)
-            if item:
-                item.setText(index)
-                if mode == 'auto':
-                    item.setForeground(QColor(76, 175, 80))
 
     
     # ==================== ЗАКРИТТЯ ВІКНА ====================

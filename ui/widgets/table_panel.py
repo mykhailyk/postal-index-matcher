@@ -1,9 +1,8 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-    QSpinBox, QTableWidget, QAbstractItemView, QHeaderView
+    QSpinBox, QTableWidget, QAbstractItemView
 )
 from PyQt5.QtCore import pyqtSignal, Qt
-from PyQt5.QtGui import QColor
 from ui.styles import AppStyles
 
 class TablePanel(QWidget):
@@ -138,8 +137,6 @@ class TablePanel(QWidget):
         """
         Оновлює візуальний індикатор сортування в заголовку
         """
-        header = self.table.horizontalHeader()
-        
         # Очищаємо всі індикатори
         for i in range(self.table.columnCount()):
             header_text = self.table.horizontalHeaderItem(i).text()

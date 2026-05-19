@@ -31,6 +31,15 @@ class ResultsPanel(QWidget):
         header = QLabel("Результати пошуку")
         header.setStyleSheet("font-weight: bold; font-size: 12px; padding: 5px;")
         layout.addWidget(header)
+
+        self.current_address_label = QLabel("Поточна адреса: -")
+        self.current_address_label.setWordWrap(True)
+        self.current_address_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.current_address_label.setStyleSheet(
+            "background-color: #f6f8fa; border: 1px solid #d0d7de; "
+            "padding: 6px; font-size: 11px; color: #24292f;"
+        )
+        layout.addWidget(self.current_address_label)
         
         # Контроль кількості результатів та налаштування
         control_layout = QHBoxLayout()
@@ -100,6 +109,34 @@ class ResultsPanel(QWidget):
         self.results_list.itemDoubleClicked.connect(self.on_result_double_clicked)
         self.results_list.itemSelectionChanged.connect(self.on_selection_changed)
         layout.addWidget(self.results_list)
+
+    def set_current_address(self, address=None, row_number=None):
+        """Shows the address currently being searched above the results list."""
+        if not address:
+            self.current_address_label.setText("Поточна адреса: -")
+            return
+
+        parts = []
+        if row_number is not None:
+            parts.append(f"Рядок {row_number}")
+        if getattr(address, 'index', None):
+            parts.append(f"індекс: {address.index}")
+        if getattr(address, 'region', None):
+            parts.append(f"обл.: {address.region}")
+        if getattr(address, 'district', None):
+            parts.append(f"р-н: {address.district}")
+        if getattr(address, 'city', None):
+            parts.append(f"н.п.: {address.city}")
+        if getattr(address, 'street', None):
+            parts.append(f"вул.: {address.street}")
+
+        building = getattr(address, 'building', None)
+        street = getattr(address, 'street', None)
+        if building and building != street:
+            parts.append(f"буд.: {building}")
+
+        text = " | ".join(parts) if parts else "-"
+        self.current_address_label.setText(f"Поточна адреса: {text}")
     
     def on_selection_changed(self):
         """Обробка зміни вибору - робимо жирним"""
@@ -140,6 +177,10 @@ class ResultsPanel(QWidget):
     def on_search_clicked(self):
         """Обробка кліку на Знайти"""
         self.search_requested.emit()
+
+    def show_results(self, results, query_building: str = ""):
+        """Сумісність зі старими викликами показу результатів."""
+        self.display_results(results, highlight_first=False)
     
     def display_results(self, results, highlight_first: bool = False):
         """
@@ -205,7 +246,7 @@ class ResultsPanel(QWidget):
             
             # РЯДОК 3: Індекс + інформація про роботу
             if not_working and 'Тимчасово не функціонує' in not_working:
-                text += f"\n* (не обслуговується) ⚠️"
+                text += "\n* (не обслуговується) ⚠️"
                 if ',' in not_working:
                     redirect_text = not_working.split(',', 1)[1].strip()
                     if redirect_text:

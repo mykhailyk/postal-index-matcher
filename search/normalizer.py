@@ -2,7 +2,6 @@
 Нормалізація українського тексту для пошуку адрес
 """
 import re
-from typing import Dict
 import config
 
 
@@ -26,6 +25,15 @@ class TextNormalizer:
         
         # Словник перейменувань (стара назва -> нова назва)
         self.city_renames = {
+            'киев': 'київ',
+            'харьков': 'харків',
+            'днепр': 'дніпро',
+            'днепропетровск': 'дніпро',
+            'львов': 'львів',
+            'николаев': 'миколаїв',
+            'пятихатки': "п'ятихатки",
+            'сєвєродонецьк': 'сіверськодонецьк',
+            'северодонецк': 'сіверськодонецьк',
             'димитров': 'мирноград',
             'красноармійськ': 'покровськ',
             'артемівськ': 'бахмут',
@@ -40,6 +48,11 @@ class TextNormalizer:
             'кузнецовськ': 'вараш',
             'южне': 'південне',
             'червоноград': 'шептицький',
+        }
+        self.street_renames_by_city = {
+            self.normalize_text('Бахмут'): {
+                self.normalize_text('Горького'): 'Олекси Тихого',
+            },
         }
     
     def normalize_text(self, text: str) -> str:
@@ -78,17 +91,13 @@ class TextNormalizer:
             return ""
         
         # Видаляємо префікси
-        city_lower = city.lower()
-        for prefix in config.CITY_PREFIXES:
-            if city_lower.startswith(prefix):
-                city = city[len(prefix):].strip()
-                break
+        city = self._strip_city_prefix(city)
         
         normalized = self.normalize_text(city)
         
         # Перевірка перейменувань
         if normalized in self.city_renames:
-            normalized = self.city_renames[normalized]
+            normalized = self.normalize_text(self.city_renames[normalized])
             
         return normalized
     
@@ -97,12 +106,7 @@ class TextNormalizer:
         if not street:
             return ""
         
-        # Видаляємо префікси
-        street_lower = street.lower()
-        for prefix in config.STREET_PREFIXES:
-            if street_lower.startswith(prefix):
-                street = street[len(prefix):].strip()
-                break
+        street = self._strip_street_prefix(street)
         
         # Розширюємо скорочення
         # "л." -> "лесі", "т." -> "тараса", "б." -> "богдана"
@@ -117,6 +121,43 @@ class TextNormalizer:
         street = re.sub(r'\bо\.\s*', 'олександра ', street, flags=re.IGNORECASE) # Додано
         
         return self.normalize_text(street)
+
+    def normalize_street_aliases(self, street: str, city: str = "") -> list[str]:
+        """Returns normalized street plus verified city-specific rename aliases."""
+        normalized_street = self.normalize_street(street)
+        if not normalized_street:
+            return []
+
+        aliases = [normalized_street]
+        normalized_city = self.normalize_city(city) if city else ""
+        city_renames = self.street_renames_by_city.get(normalized_city, {})
+        renamed_street = city_renames.get(normalized_street)
+        if renamed_street:
+            normalized_renamed = self.normalize_street(renamed_street)
+            if normalized_renamed and normalized_renamed not in aliases:
+                aliases.append(normalized_renamed)
+
+        return aliases
+
+    @staticmethod
+    def detect_street_type(street: str) -> str:
+        if not street:
+            return ""
+
+        street = street.strip().lower()
+        type_patterns = [
+            ("lane", r"^(?:пров(?:улок)?|пров\.)\b"),
+            ("avenue", r"^(?:просп(?:ект)?|пр-т|прт\.?|пр\.?)\b"),
+            ("boulevard", r"^(?:бульв(?:ар)?|бул)\b"),
+            ("square", r"^(?:пл(?:оща)?)\b"),
+            ("highway", r"^(?:шосе)\b"),
+            ("street", r"^(?:вул(?:иця)?)\b"),
+        ]
+        for street_type, pattern in type_patterns:
+            if re.search(pattern, street, flags=re.IGNORECASE):
+                return street_type
+
+        return ""
     
     def normalize_region(self, region: str) -> str:
         """Нормалізує назву області"""
@@ -135,6 +176,24 @@ class TextNormalizer:
         for ru_char, uk_char in self.transliteration_map.items():
             text = text.replace(ru_char, uk_char)
         return text
+
+    @staticmethod
+    def _strip_city_prefix(city: str) -> str:
+        return re.sub(
+            r'^\s*(?:місто|город|нас\.?\s*пункт|н\.?\s*п\.?|смт|сел(?:ище)?|с-ще|м|г|с)\.?\s+',
+            '',
+            city,
+            flags=re.IGNORECASE,
+        ).strip()
+
+    @staticmethod
+    def _strip_street_prefix(street: str) -> str:
+        return re.sub(
+            r'^\s*(?:вул(?:иця)?|пров(?:улок)?|бульв(?:ар)?|бул|просп(?:ект)?|пр-т|прт\.?|пр\.?|пл(?:оща)?|шосе)\.?\s*',
+            '',
+            street,
+            flags=re.IGNORECASE,
+        ).strip()
     
     def extract_consonants(self, text: str) -> str:
         """
@@ -201,7 +260,13 @@ class TextNormalizer:
         # Приклад: "Мічуріна 28, #35" -> building="28", street="Мічуріна"
         
         # 1. Спочатку спробуємо знайти номер будинку перед комою або #
-        match = re.search(r'^(.*?)\s+(\d+[а-яА-Яa-zA-Z]?(?:[/-]\d+)?)\s*(?:,.*|#.*)?$', street)
+        building_core = r'\d+(?:[/-]\d+)?(?:[-\s]?[а-яА-Яa-zA-ZіїєґІЇЄҐ])?'
+        corp_tail = r'(?:\s*[-/]?\s*(?:корп|корпус|к)\.?\s*\d+)?'
+        match = re.search(
+            rf'^(.*?)\s+({building_core}){corp_tail}\s*(?:,.*|#.*)?$',
+            street,
+            flags=re.IGNORECASE
+        )
         if match:
             clean_street = match.group(1).strip()
             building = match.group(2).strip()

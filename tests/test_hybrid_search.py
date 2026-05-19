@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 import sys
 import os
 
@@ -9,7 +9,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from search.hybrid_search import HybridSearch
 from models.address import Address
 from models.magistral_record import MagistralRecord
-import config
 
 class TestHybridSearch(unittest.TestCase):
     def setUp(self):

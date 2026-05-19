@@ -4,10 +4,24 @@
 import csv
 import pickle
 import os
+import builtins
+import sys
 from typing import List, Dict
 from models.magistral_record import MagistralRecord
 from search.normalizer import TextNormalizer
 import config
+
+
+def print(*args, **kwargs):
+    try:
+        builtins.print(*args, **kwargs)
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stdout, 'encoding', None) or 'utf-8'
+        safe_args = [
+            str(arg).encode(encoding, errors='replace').decode(encoding)
+            for arg in args
+        ]
+        builtins.print(*safe_args, **kwargs)
 
 
 class MagistralLoader:
@@ -99,19 +113,21 @@ class MagistralLoader:
         
         # Обробляємо дані
         for row in csv_data:
+            row = {key.strip().lstrip('\ufeff'): value for key, value in row.items() if key}
+
             record = MagistralRecord(
                 region=row.get('Область', '').strip(),
-                old_district=row.get(' Адміністративний район(старий)', '').strip(),
-                new_district=row.get(' Адміністративний район(новий)', '').strip(),
-                otg=row.get(' Найменування ОТГ(довідково)', '').strip(),
-                city=row.get(' Населений пункт', '').strip(),
-                city_index=row.get(' Індекс НП', '').strip(),
-                street=row.get(' Назва вулиці', '').strip(),
+                old_district=row.get('Адміністративний район(старий)', '').strip(),
+                new_district=row.get('Адміністративний район(новий)', '').strip(),
+                otg=row.get('Найменування ОТГ(довідково)', '').strip(),
+                city=row.get('Населений пункт', '').strip(),
+                city_index=row.get('Індекс НП', '').strip(),
+                street=row.get('Назва вулиці', '').strip(),
                 buildings=row.get('№ будинку', '').strip(),
-                sort_center_1=row.get('  сортувальний центр 1 рівня', '').strip(),
-                sort_center_2=row.get(' сортувальний центр 2 рівня', '').strip(),
-                delivery_district=row.get(' Адміністративний район доставки(вручення)', '').strip(),
-                tech_index=row.get(' Технологічний індекс ОПЗ доставки(вручення)', '').strip(),
+                sort_center_1=row.get('сортувальний центр 1 рівня', '').strip(),
+                sort_center_2=row.get('сортувальний центр 2 рівня', '').strip(),
+                delivery_district=row.get('Адміністративний район доставки(вручення)', '').strip(),
+                tech_index=row.get('Технологічний індекс ОПЗ доставки(вручення)', '').strip(),
                 features=row.get('Особливості функціонування ВПЗ', '').strip(),
                 not_working=row.get('Тимчасово не функціонує', '').strip()
             )

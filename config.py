@@ -30,7 +30,7 @@ SETTINGS_FILE = os.path.join(BASE_PATH, 'settings.json')
 
 # ==================== MAGISTRAL - ФІКСОВАНИЙ ШЛЯХ ====================
 # Завжди на мережевому диску X:
-MAGISTRAL_CSV_PATH = r'X:\!obmin\UkrPoshta\magistral.csv'
+MAGISTRAL_CSV_PATH = os.path.join(CACHE_DIR, 'magistral.csv')
 
 # Кеш magistral зберігається локально (біля EXE)
 MAGISTRAL_CACHE_PATH = os.path.join(CACHE_DIR, 'normalized_magistral.pkl')

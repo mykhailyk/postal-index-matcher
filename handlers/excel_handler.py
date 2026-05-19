@@ -23,11 +23,10 @@ class ExcelHandler:
     def load_file(self, file_path: str) -> pd.DataFrame:
         """Завантажує Excel файл з ЗБЕРЕЖЕННЯМ НУЛІВ"""
         try:
-            # ✅ ЧИТАЄМО З АВТОМАТИЧНИМ ВИЗНАЧЕННЯМ ТИПІВ
-            # Це важливо, щоб числа залишалися числами (0,444 -> float), а не ставали рядками з крапкою ("0.444")
+            # Читаємо як текст, щоб поштові індекси на кшталт 01001 не втрачали початкові нулі.
             self.df = pd.read_excel(
                 file_path,
-                dtype=None,  # Автоматичні типи
+                dtype=str,
                 keep_default_na=False,
                 na_values=['']  # Тільки пусті рядки як NaN
             )
@@ -36,7 +35,11 @@ class ExcelHandler:
             self.df = self.df.fillna("")
             
             # ✅ ВИДАЛІТЬ ПУСТІ РЯДКИ
-            self.df = self.df.dropna(how='all').reset_index(drop=True)
+            non_empty_rows = self.df.apply(
+                lambda row: any(str(value).strip() for value in row),
+                axis=1
+            )
+            self.df = self.df[non_empty_rows].reset_index(drop=True)
             
             self.file_path = file_path
             self.logger.info(f"✓ Завантажено файл: {file_path}")
@@ -73,8 +76,14 @@ class ExcelHandler:
             
             if ext.lower() == '.xls':
                 # Зберігаємо в XLS (старий формат)
-                self.df.to_excel(save_path, index=False, engine='xlwt')
-                self.logger.info(f"Файл збережено як XLS: {save_path}")
+                try:
+                    self.df.to_excel(save_path, index=False, engine='xlwt')
+                    self.logger.info(f"Файл збережено як XLS: {save_path}")
+                except (ImportError, ValueError):
+                    save_path = os.path.splitext(save_path)[0] + ".xlsx"
+                    self.df.to_excel(save_path, index=False, engine='openpyxl')
+                    self.file_path = save_path
+                    self.logger.info(f"XLS не підтримується поточною версією pandas; файл збережено як XLSX: {save_path}")
             else:
                 # Зберігаємо в XLSX (новий формат)
                 self.df.to_excel(save_path, index=False, engine='openpyxl')
@@ -130,29 +139,33 @@ class ExcelHandler:
             if '_original_row_index' not in self.df.columns:
                 self.df['_original_row_index'] = self.df.index
             columns_to_keep.append('_original_row_index')
-            
+
             # Проходимо по mapping і збираємо індекси колонок
             current_new_idx = 1  # 0 - це _original_row_index
             
             # Сортуємо поля для порядку (опціонально)
             # Але краще зберегти порядок як в mapping або як в оригіналі
             
-            used_col_indices = set()
+            old_to_new_idx = {}
             
             for field, col_indices in self.column_mapping.items():
                 new_indices_for_field = []
                 for old_col_idx in col_indices:
-                    if old_col_idx in used_col_indices:
+                    if old_col_idx in old_to_new_idx:
+                        new_indices_for_field.append(old_to_new_idx[old_col_idx])
                         continue
                         
                     col_name = self.original_df.columns[old_col_idx]
                     columns_to_keep.append(col_name)
                     new_indices_for_field.append(current_new_idx)
+                    old_to_new_idx[old_col_idx] = current_new_idx
                     current_new_idx += 1
-                    used_col_indices.add(old_col_idx)
                 
                 if new_indices_for_field:
                     new_mapping[field] = new_indices_for_field
+
+            if 'Старий індекс' in self.df.columns:
+                columns_to_keep.append('Старий індекс')
             
             # 3. Фільтруємо DataFrame
             self.df = self.df[columns_to_keep].copy()

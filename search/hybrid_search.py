@@ -2,7 +2,8 @@
 Гібридний пошук адрес v3.0 - з рівнями впевненості
 Комбінує Jaro-Winkler, Levenshtein, Fuzzy matching, N-grams
 """
-from typing import List, Dict, Tuple, Optional
+import re
+from typing import List, Dict, Optional
 from models.address import Address
 from models.magistral_record import MagistralRecord
 from search.normalizer import TextNormalizer
@@ -71,6 +72,15 @@ class HybridSearch:
             }
         """
         self._ensure_loaded()
+
+        if address.street and address.building:
+            street_norm = self.normalizer.normalize_text(address.street)
+            building_norm = self.normalizer.normalize_text(address.building)
+            if street_norm and street_norm == building_norm:
+                address.building = ""
+
+        self._preprocess_region_district(address)
+        self._preprocess_full_address(address)
         
         # ============ 0. ПОПЕРЕДНЯ ОБРОБКА ============
         # Спроба витягнути місто з вулиці, якщо місто не вказано
@@ -242,6 +252,101 @@ class HybridSearch:
             'total_found': 0,
             'search_mode': 'none'
         }
+
+    def _preprocess_full_address(self, address: Address) -> None:
+        """Extract city, street and building when the street field contains a full address."""
+        if not address.street or "," not in address.street:
+            return
+
+        parts = [p.strip() for p in address.street.split(",") if p.strip()]
+        if len(parts) < 3:
+            return
+
+        first_part_with_index = re.match(r"^(\d{4,5})\s+(.+)$", parts[0])
+        if first_part_with_index:
+            parts[0] = first_part_with_index.group(2).strip()
+        elif re.fullmatch(r"\d{4,5}", parts[0]):
+            parts = parts[1:]
+
+        while parts and self.normalizer.normalize_text(parts[0]) in {"україна", "украина", "ukraine"}:
+            parts = parts[1:]
+
+        if len(parts) < 2:
+            return
+
+        city = ""
+        street_idx = 1
+
+        for idx, part in enumerate(parts[:3]):
+            part_norm = self.normalizer.normalize_text(part)
+            if re.match(r"^(м|г|місто|город|с|смт|с-ще)\.?\s*", part_norm):
+                city = part
+                street_idx = idx + 1
+                break
+
+        if not city and not address.city:
+            city = parts[0]
+            street_idx = 1
+
+        if city and (not address.city or re.match(r"^г\.?\s*", address.city.strip(), re.IGNORECASE)):
+            address.city = city
+
+        if street_idx >= len(parts):
+            return
+
+        street = parts[street_idx]
+        building_parts = parts[street_idx + 1:]
+
+        if street:
+            address.street = street
+
+        if not address.building and building_parts:
+            building = self._extract_building_from_full_address_parts(building_parts)
+            if building:
+                address.building = building
+
+    @staticmethod
+    def _preprocess_region_district(address: Address) -> None:
+        region = (address.region or "").lower()
+        district = (address.district or "").lower()
+        region_looks_like_district = bool(re.search(r"\b(р-н|район)\b", region))
+        district_looks_like_region = bool(re.search(r"\b(обл\.?|область)\b", district))
+
+        if region_looks_like_district and district_looks_like_region:
+            address.region, address.district = address.district, address.region
+            return
+
+        region_looks_like_region = bool(re.search(r"\b(обл\.?|область)\b", region))
+        bare_region_looks_like_district = bool(
+            region and not region_looks_like_region and re.search(r"(ський|цький|зький)$", region)
+        )
+        if bare_region_looks_like_district and not address.district:
+            address.district = address.region
+            address.region = ""
+
+    @staticmethod
+    def _extract_building_from_full_address_parts(parts: List[str]) -> str:
+        building_pattern = r"\d+(?:[-/]\d+)?(?:[-\s]?[а-яА-Яa-zA-ZіїєґІЇЄҐ])?"
+        for part in parts:
+            value = part.strip()
+            if not value or value in {"*", "#", "#-"}:
+                continue
+
+            match = re.search(
+                rf"(?:буд\.?|будинок|д\.?)\s*({building_pattern})(?=\s|,|$|корп|корпус|кв|офіс)",
+                value,
+                flags=re.IGNORECASE,
+            )
+            if not match:
+                match = re.search(
+                    rf"({building_pattern})(?=\s|,|$|корп|корпус|кв|офіс)",
+                    value,
+                    flags=re.IGNORECASE,
+                )
+            if match:
+                return match.group(1).strip()
+
+        return ""
     
     def _find_general_city_results(self, address: Address) -> List[Dict]:
         """
@@ -296,8 +401,8 @@ class HybridSearch:
                 'district': district,
                 'city': template.city,
                 'city_ua': template.city,
-                'street': f"Загальний для н.п. (вулицю не знайдено)", # Спеціальна позначка
-                'street_ua': f"Загальний для н.п.",
+                'street': "Загальний для н.п. (вулицю не знайдено)", # Спеціальна позначка
+                'street_ua': "Загальний для н.п.",
                 'building': '',
                 'buildings': '',
                 'index': min_index,
@@ -346,8 +451,8 @@ class HybridSearch:
         result = perfect_results[0]
         
         # Перевіряємо індекс якщо заданий користувачем
-        if address.index and address.index.strip():
-            query_index = address.index.strip().lstrip('0')
+        query_index = self._normalize_query_index(address.index)
+        if query_index:
             result_index = result['index'].strip().lstrip('0') if result['index'] else ''
             
             if query_index != result_index:
@@ -424,9 +529,11 @@ class HybridSearch:
         
         # Нормалізуємо запит
         query_city = self.normalizer.normalize_city(address.city)
-        query_street = self.normalizer.normalize_street(address.street)
+        query_street_options = self.normalizer.normalize_street_aliases(address.street, address.city)
+        query_street = query_street_options[0] if query_street_options else ""
+        query_street_type = self.normalizer.detect_street_type(address.street)
         query_building = self.normalizer.normalize_text(address.building) if address.building else ""
-        query_index = address.index.strip().lstrip('0') if address.index else ""
+        query_index = self._normalize_query_index(address.index)
         query_region = self.normalizer.normalize_region(address.region) if address.region else ""
         
         # ============ 1. МІСТО (35%) - ЖОРСТКИЙ ФІЛЬТР ============
@@ -475,10 +582,13 @@ class HybridSearch:
         street_similarity = 0.0
         if query_street and record.normalized_street:
             # Використовуємо token_similarity для ігнорування порядку слів
-            street_similarity = self.similarity.token_similarity(
-                query_street, 
-                record.normalized_street
+            street_similarity = max(
+                self.similarity.token_similarity(street_option, record.normalized_street)
+                for street_option in query_street_options
             )
+            record_street_type = self.normalizer.detect_street_type(record.street)
+            if query_street_type and record_street_type and query_street_type != record_street_type:
+                street_similarity = max(0.0, street_similarity - 0.25)
             
             # ЖОРСТКИЙ ФІЛЬТР: вулиця має бути досить схожою
             if street_similarity < config.SCORE_STREET_THRESHOLD:
@@ -524,7 +634,7 @@ class HybridSearch:
             r_idx = record.city_index.strip().replace(" ", "").replace("\x00", "").lstrip('0')
             
             if q_idx == r_idx:
-                total_score += config.SCORE_INDEX_WEIGHT
+                total_score += max(config.SCORE_INDEX_WEIGHT, 0.10)
             else:
                 # Індекс не співпадає - невеликий штраф
                 total_score -= 0.02
@@ -537,6 +647,18 @@ class HybridSearch:
         
         # Обмежуємо score від 0 до 1
         return max(0.0, min(total_score, 1.0))
+
+    @staticmethod
+    def _normalize_query_index(index: str) -> str:
+        if not index:
+            return ""
+
+        cleaned = str(index).strip().replace(" ", "").replace("\x00", "")
+        if cleaned in {"*", "00000", "01000"}:
+            return ""
+        if not cleaned.isdigit():
+            return ""
+        return cleaned.lstrip('0')
     
     def _create_result(self, record: MagistralRecord, score: float) -> Dict:
         """Створює результат з усією інформацією"""

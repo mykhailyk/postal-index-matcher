@@ -169,7 +169,14 @@ class SearchManager:
         return response
     
     def get_magistral_records(self):
-        """Повертає всі magistral записи (УЖЕ завантажені!)"""
+        """Повертає всі magistral записи, завантажуючи їх за потреби."""
+        if not self.search_engine:
+            return []
+
+        ensure_loaded = getattr(self.search_engine, '_ensure_loaded', None)
+        if callable(ensure_loaded):
+            ensure_loaded()
+
         return self.search_engine.magistral_records
     
     def refresh_cache(self, force_reload: bool = True):
@@ -181,7 +188,9 @@ class SearchManager:
         """
         try:
             if self.search_engine and hasattr(self.search_engine, 'loader'):
-                self.search_engine.loader.load(force_reload=force_reload)
+                records = self.search_engine.loader.load(force_reload=force_reload)
+                self.search_engine.magistral_records = records
+                self.search_engine._is_loaded = True
                 self.logger.info("Кеш magistral.csv оновлено")
         except Exception as e:
             self.logger.error(f"Помилка оновлення кешу: {e}")

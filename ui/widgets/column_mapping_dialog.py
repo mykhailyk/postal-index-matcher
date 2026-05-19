@@ -5,7 +5,7 @@
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
-    QComboBox, QCheckBox, QScrollArea, QWidget, QFrame, QSplitter
+    QComboBox, QScrollArea, QWidget, QFrame, QSplitter
 )
 from PyQt5.QtCore import Qt, QSettings
 from PyQt5.QtGui import QColor

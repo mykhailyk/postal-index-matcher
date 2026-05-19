@@ -4,7 +4,6 @@
 import os
 import pickle
 from collections import defaultdict
-import config
 
 
 class UkrposhtaIndex:

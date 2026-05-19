@@ -9,8 +9,7 @@ FileManager - управління операціями з Excel файлами
 """
 
 import os
-import pandas as pd
-from typing import Optional, Dict, List
+from typing import Optional
 from PyQt5.QtWidgets import QFileDialog, QMessageBox
 
 from handlers.excel_handler import ExcelHandler
@@ -108,7 +107,7 @@ class FileManager:
             # ✅ ДОДАЄМО КОЛОНКУ В КІНЕЦЬ (НЕ ПОСЕРЕДИНУ!)
             self.excel_handler.df['Старий індекс'] = old_index_values
             
-            self.logger.info(f"✅ Колонка 'Старий індекс' створена з копією індексу")
+            self.logger.info("✅ Колонка 'Старий індекс' створена з копією індексу")
             self.logger.info(f"✅ Приклади: {self.excel_handler.df['Старий індекс'].head(3).tolist()}")
             
         except Exception as e:
@@ -139,7 +138,7 @@ class FileManager:
         
         if old_index_col_idx is not None:
             self.excel_handler.df['Старий індекс'] = self.excel_handler.df.iloc[:, idx_col].copy()
-            self.logger.info(f"Скопійовано індекс у 'Старий індекс'")
+            self.logger.info("Скопійовано індекс у 'Старий індекс'")
     
     def save_file(self, file_path: Optional[str] = None, 
                   save_old_index: bool = False, 
@@ -230,11 +229,12 @@ class FileManager:
                     return False
                 
                 try:
-                    import xlwt
+                    __import__('xlwt')
                     df_to_save.to_excel(file_path, index=False, engine='xlwt')
                 except (ImportError, ValueError) as e:
                     self.logger.error(f"Помилка збереження XLS: {e}")
                     
+                    should_save_xlsx = parent is None
                     if parent:
                         reply = QMessageBox.question(
                             parent, 
@@ -243,17 +243,16 @@ class FileManager:
                             "Зберегти файл у новому форматі .xlsx?",
                             QMessageBox.Yes | QMessageBox.No
                         )
+                        should_save_xlsx = reply == QMessageBox.Yes
+
+                    if should_save_xlsx:
+                        new_path = os.path.splitext(file_path)[0] + ".xlsx"
+                        df_to_save.to_excel(new_path, index=False, engine='openpyxl')
+                        self.logger.info(f"Файл збережено як XLSX: {new_path}")
                         
-                        if reply == QMessageBox.Yes:
-                            new_path = os.path.splitext(file_path)[0] + ".xlsx"
-                            df_to_save.to_excel(new_path, index=False, engine='openpyxl')
-                            self.logger.info(f"Файл збережено як XLSX: {new_path}")
+                        self.current_file = new_path
                             
-                            # Оновлюємо поточний файл якщо це він
-                            if file_path == self.current_file:
-                                self.current_file = new_path
-                                
-                            return True
+                        return True
                     
                     return False
             else:
@@ -261,6 +260,7 @@ class FileManager:
                 df_to_save.to_excel(file_path, index=False, engine='openpyxl')
             
             self.logger.info(f"Файл збережено: {file_path}")
+            self.current_file = file_path
             return True
             
         except Exception as e:
