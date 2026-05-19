@@ -442,16 +442,30 @@ class HybridSearch:
                 perfect_results.append(r)
             elif allow_general and r.get('is_general') and r['score'] >= 0.85:
                 perfect_results.append(r)
+
+        query_index = self._normalize_query_index(address.index)
+        if query_index:
+            index_matched_results = [
+                r for r in perfect_results
+                if (r.get('index') or '').strip().lstrip('0') == query_index
+            ]
+            if index_matched_results:
+                perfect_results = index_matched_results
         
         # Має бути ТІЛЬКИ ОДИН результат з високою впевненістю
         if len(perfect_results) != 1:
-            self.logger.debug(f"Автопідстановка неможлива: знайдено {len(perfect_results)} результатів ≥{config.AUTO_MATCH_CONFIDENCE}%")
-            return None
+            unique_indexes = {
+                (r.get('index') or '').strip().lstrip('0')
+                for r in perfect_results
+                if r.get('index')
+            }
+            if len(unique_indexes) != 1:
+                self.logger.debug(f"Автопідстановка неможлива: знайдено {len(perfect_results)} результатів ≥{config.AUTO_MATCH_CONFIDENCE}%")
+                return None
         
         result = perfect_results[0]
         
         # Перевіряємо індекс якщо заданий користувачем
-        query_index = self._normalize_query_index(address.index)
         if query_index:
             result_index = result['index'].strip().lstrip('0') if result['index'] else ''
             
@@ -464,13 +478,21 @@ class HybridSearch:
         
         # Перевіряємо ТОЧНЕ співпадіння будинку (ТІЛЬКИ для НЕ загальних результатів)
         if not result.get('is_general') and address.building and address.building.strip():
-            query_building = address.building.upper().replace("-", "").replace(" ", "").strip()
+            query_building = self._normalize_building_for_match(address.building)
+            raw_buildings_list = [b.strip() for b in result['buildings'].split(',')]
             buildings_list = [
-                b.strip().upper().replace("-", "").replace(" ", "") 
-                for b in result['buildings'].split(',')
+                self._normalize_building_for_match(b)
+                for b in raw_buildings_list
             ]
             
-            if query_building not in buildings_list:
+            query_building_base = self._building_base(address.building)
+            base_buildings = [self._building_base(b) for b in raw_buildings_list]
+            base_match_allowed = self._has_letter_suffix(address.building)
+            if query_building not in buildings_list and (
+                not base_match_allowed
+                or not query_building_base
+                or query_building_base not in base_buildings
+            ):
                 self.logger.debug(
                     f"Автопідстановка неможлива: будинок '{query_building}' "
                     f"відсутній в списку {buildings_list}"
@@ -601,26 +623,39 @@ class HybridSearch:
         building_bonus = 0.0
         if query_building and record.buildings:
             # Очищаємо будинок від дефісів та пробілів
+            raw_buildings_list = [b.strip() for b in record.buildings.split(',')]
             buildings_list = [
-                b.strip().upper().replace("-", "").replace(" ", "") 
-                for b in record.buildings.split(',')
+                self._normalize_building_for_match(b)
+                for b in raw_buildings_list
             ]
-            query_building_clean = query_building.upper().replace("-", "").replace(" ", "")
+            query_building_clean = self._normalize_building_for_match(query_building)
             
             if query_building_clean in buildings_list:
                 # ТОЧНЕ СПІВПАДІННЯ - повний бонус
                 building_bonus = config.SCORE_BUILDING_EXACT_BONUS
                 total_score += building_bonus
             else:
-                # Часткове співпадіння (наприклад, "27" в "27А")
-                found_partial = False
-                for building in buildings_list:
-                    if query_building_clean in building or building in query_building_clean:
-                        # Часткове співпадіння - зменшений бонус
-                        building_bonus = config.SCORE_BUILDING_PARTIAL_BONUS
-                        total_score += building_bonus
-                        found_partial = True
-                        break
+                query_building_base = self._building_base(query_building)
+                base_buildings = [self._building_base(b) for b in raw_buildings_list]
+                if (
+                    self._has_letter_suffix(query_building)
+                    and query_building_base
+                    and query_building_base in base_buildings
+                ):
+                    building_bonus = 0.12
+                    total_score += building_bonus
+                    found_partial = True
+                else:
+                    found_partial = False
+
+                    # Часткове співпадіння (наприклад, "27" в "27А")
+                    for building in buildings_list:
+                        if query_building_clean in building or building in query_building_clean:
+                            # Часткове співпадіння - зменшений бонус
+                            building_bonus = config.SCORE_BUILDING_PARTIAL_BONUS
+                            total_score += building_bonus
+                            found_partial = True
+                            break
                 
                 # Якщо будинок взагалі не знайдено - ШТРАФ
                 if not found_partial:
@@ -647,6 +682,21 @@ class HybridSearch:
         
         # Обмежуємо score від 0 до 1
         return max(0.0, min(total_score, 1.0))
+
+    @staticmethod
+    def _normalize_building_for_match(building: str) -> str:
+        return str(building or "").upper().replace("-", "").replace(" ", "").strip()
+
+    @staticmethod
+    def _building_base(building: str) -> str:
+        cleaned = str(building or "").upper().replace(" ", "").strip()
+        match = re.match(r"^(\d+(?:/\d+)?)(?:-?[A-ZА-ЯІЇЄҐ])?$", cleaned, flags=re.IGNORECASE)
+        return match.group(1) if match else ""
+
+    @staticmethod
+    def _has_letter_suffix(building: str) -> bool:
+        cleaned = str(building or "").upper().replace(" ", "").strip()
+        return bool(re.match(r"^\d+(?:/\d+)?-?[A-ZА-ЯІЇЄҐ]$", cleaned, flags=re.IGNORECASE))
 
     @staticmethod
     def _normalize_query_index(index: str) -> str:

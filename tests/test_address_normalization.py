@@ -64,6 +64,22 @@ def test_city_specific_street_rename_aliases():
     assert normalizer.normalize_street("Олекси Тихого") in aliases
 
 
+def test_street_rename_aliases_load_from_csv():
+    normalizer = TextNormalizer()
+
+    aliases = normalizer.normalize_street_aliases("Горького", "Бахмут")
+
+    assert normalizer.normalize_street("Олекси Тихого") in aliases
+
+
+def test_global_street_rename_aliases():
+    normalizer = TextNormalizer()
+
+    aliases = normalizer.normalize_street_aliases("БЕЗ НАЗВИ", "Голубине")
+
+    assert normalizer.normalize_street("відсутня") in aliases
+
+
 def test_detects_street_type():
     normalizer = TextNormalizer()
 
@@ -125,3 +141,12 @@ def test_moves_bare_district_out_of_region_field():
 
 def test_extracts_building_before_corpus_from_full_address_parts():
     assert HybridSearch._extract_building_from_full_address_parts(["буд.4корпус 6", "кв.58"]) == "4"
+
+
+def test_building_base_matches_letter_suffix_only():
+    assert HybridSearch._building_base("117-А") == "117"
+    assert HybridSearch._building_base("117А") == "117"
+    assert HybridSearch._building_base("88-2") == ""
+    assert HybridSearch._has_letter_suffix("117-А")
+    assert not HybridSearch._has_letter_suffix("117")
+    assert not HybridSearch._has_letter_suffix("88-2")

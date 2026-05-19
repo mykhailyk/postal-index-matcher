@@ -34,6 +34,7 @@ MAGISTRAL_CSV_PATH = os.path.join(CACHE_DIR, 'magistral.csv')
 
 # Кеш magistral зберігається локально (біля EXE)
 MAGISTRAL_CACHE_PATH = os.path.join(CACHE_DIR, 'normalized_magistral.pkl')
+STREET_ALIASES_PATH = os.path.join(DATA_DIR, 'street_aliases.csv')
 
 # Індекси UkrPoshta (для каскадної форми)
 UKRPOSHTA_INDEX_PATH = os.path.join(CACHE_DIR, 'ukrposhta_index.pkl')

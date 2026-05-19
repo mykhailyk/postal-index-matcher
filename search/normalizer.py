@@ -1,6 +1,8 @@
 """
 Нормалізація українського тексту для пошуку адрес
 """
+import csv
+import os
 import re
 import config
 
@@ -54,6 +56,10 @@ class TextNormalizer:
                 self.normalize_text('Горького'): 'Олекси Тихого',
             },
         }
+        self.global_street_renames = {
+            self.normalize_text('без назви'): 'відсутня',
+        }
+        self._load_street_aliases()
     
     def normalize_text(self, text: str) -> str:
         """
@@ -129,6 +135,12 @@ class TextNormalizer:
             return []
 
         aliases = [normalized_street]
+        global_renamed_street = self.global_street_renames.get(normalized_street)
+        if global_renamed_street:
+            normalized_global_renamed = self.normalize_street(global_renamed_street)
+            if normalized_global_renamed and normalized_global_renamed not in aliases:
+                aliases.append(normalized_global_renamed)
+
         normalized_city = self.normalize_city(city) if city else ""
         city_renames = self.street_renames_by_city.get(normalized_city, {})
         renamed_street = city_renames.get(normalized_street)
@@ -138,6 +150,31 @@ class TextNormalizer:
                 aliases.append(normalized_renamed)
 
         return aliases
+
+    def _load_street_aliases(self) -> None:
+        aliases_path = getattr(config, "STREET_ALIASES_PATH", "")
+        if not aliases_path or not os.path.exists(aliases_path):
+            return
+
+        try:
+            with open(aliases_path, newline="", encoding="utf-8-sig") as aliases_file:
+                for row in csv.DictReader(aliases_file):
+                    city = (row.get("city") or "").strip()
+                    old_street = (row.get("old_street") or "").strip()
+                    new_street = (row.get("new_street") or "").strip()
+                    if not city or not old_street or not new_street:
+                        continue
+
+                    normalized_city = self.normalize_city(city)
+                    normalized_old_street = self.normalize_street(old_street)
+                    if not normalized_city or not normalized_old_street:
+                        continue
+
+                    self.street_renames_by_city.setdefault(normalized_city, {})[
+                        normalized_old_street
+                    ] = new_street
+        except OSError:
+            return
 
     @staticmethod
     def detect_street_type(street: str) -> str:
