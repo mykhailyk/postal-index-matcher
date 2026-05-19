@@ -851,6 +851,7 @@ class MainWindow(QMainWindow):
         try:
             for idx in range(start_row, total_rows):
                 self.current_row = idx
+                self._focus_processing_row(idx)
                 
                 # 🛑 ПЕРЕВІРКА ЗУПИНКИ
                 if self._stop_requested:
@@ -869,7 +870,7 @@ class MainWindow(QMainWindow):
                 try:
                     address = self.file_manager.excel_handler.get_address_from_row(idx)
                     
-                    if not address or not address.city:
+                    if not address or address.is_empty():
                         stats['skipped'] += 1
                         continue
                     
@@ -879,11 +880,11 @@ class MainWindow(QMainWindow):
                     
                     if results['mode'] == 'auto' and results.get('auto_result'):
                         auto_result = results['auto_result']
-                        auto_index = auto_result['index']
+                        auto_index = self.processing_manager._determine_index(auto_result)
                         auto_confidence = auto_result.get('confidence', 0)
                         
                         # ✅ ПЕРЕВІРЯЄМО МІНІМАЛЬНУ ТОЧНІСТЬ
-                        if auto_confidence >= min_confidence:
+                        if auto_confidence >= min_confidence and auto_index:
                             # Записуємо індекс напряму в DataFrame
                             mapping = self.file_manager.excel_handler.column_mapping
                             if mapping and 'index' in mapping:
@@ -901,15 +902,10 @@ class MainWindow(QMainWindow):
                             
                             stats['auto_applied'] += 1
                             
-                            # ✅ СКРОЛІНГ ТА ВИДІЛЕННЯ
-                            # Використовуємо scrollToItem для надійного скролінгу
-                            self.table_panel.table.scrollToItem(
-                                self.table_panel.table.item(idx, 0),
-                                QAbstractItemView.PositionAtCenter
-                            )
-                            self.table_panel.table.selectRow(idx)
-                            
                             self.logger.info(f"✅ Рядок {idx + 1}: Автопідстановка [{auto_index}] - {auto_confidence}%")
+                        elif auto_confidence >= min_confidence:
+                            stats['manual_required'] += 1
+                            self.logger.info(f"⚠️ Рядок {idx + 1}: Автопідстановка без індексу")
                         else:
                             stats['manual_required'] += 1
                             self.logger.info(f"⚠️ Рядок {idx + 1}: Низька точність ({auto_confidence}% < {min_confidence}%)")
@@ -956,6 +952,22 @@ class MainWindow(QMainWindow):
             )
             # Виділяємо рядок
             self.table_panel.table.setCurrentCell(row_idx, 0)
+
+    def _focus_processing_row(self, row_idx: int):
+        """Показує активний рядок під час пакетної обробки без запуску пошуку від selectionChanged."""
+        if not (0 <= row_idx < self.table_panel.table.rowCount()):
+            return
+
+        table = self.table_panel.table
+        table.blockSignals(True)
+        try:
+            item = table.item(row_idx, 0)
+            if item:
+                table.scrollToItem(item, QAbstractItemView.PositionAtCenter)
+            table.setCurrentCell(row_idx, 0)
+            table.selectRow(row_idx)
+        finally:
+            table.blockSignals(False)
 
 
 

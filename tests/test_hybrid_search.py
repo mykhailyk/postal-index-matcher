@@ -78,6 +78,19 @@ class TestHybridSearch(unittest.TestCase):
         result = self.search._find_auto_result(address, results)
         self.assertIsNone(result)
 
+    def test_find_auto_result_prefers_single_very_high_match(self):
+        address = Address(city="Кам'янське", street="Ромашкова", building="37")
+
+        results = [
+            {'index': '51912', 'confidence': 100, 'score': 1.0, 'buildings': '35,36,37,38'},
+            {'index': '51918', 'confidence': 90, 'score': 0.90, 'buildings': '33,37,39'},
+        ]
+
+        result = self.search._find_auto_result(address, results)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result['index'], '51912')
+
     def test_find_auto_result_wrong_building(self):
         """Тест коли будинок не співпадає"""
         address = Address(city="Київ", street="Хрещатик", building="999")

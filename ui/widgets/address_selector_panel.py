@@ -391,7 +391,7 @@ class AddressSelectorPanel(QWidget):
         
         self.cascade_building_combo.clear()
         self.cascade_building_combo.hide()
-        self.cascade_index_input.clear()
+        self.set_cascade_city_index(city_full)
         
         self.cascade_street_input.setFocus()
         
@@ -405,6 +405,22 @@ class AddressSelectorPanel(QWidget):
             self.cascade_street_list.setFixedWidth(self.cascade_street_input.width())
             self.cascade_street_list.show()
             self.cascade_street_list.raise_()
+
+    def set_cascade_city_index(self, city_full):
+        """Встановлює головний індекс населеного пункту після вибору міста."""
+        city_name = city_full.split(',')[0].strip()
+        indexes = []
+
+        for record in self.magistral_cache:
+            record_city = getattr(record, 'city', None)
+            idx = getattr(record, 'city_index', None)
+            if not record_city or not idx:
+                continue
+
+            if city_name.lower() in record_city.lower() or record_city.lower() in city_name.lower():
+                indexes.append(str(idx))
+
+        self.cascade_index_input.setText(min(indexes) if indexes else "00000")
     
     def on_cascade_street_typed(self, text):
         """Введення вулиці з POPUP"""
@@ -442,7 +458,7 @@ class AddressSelectorPanel(QWidget):
         buildings_map = self.ukr_index.get_buildings(city_full, street_text)
                 
         if len(buildings_map) == 0:
-            self.cascade_index_input.clear()
+            self.set_cascade_city_index(city_full)
             self.cascade_building_combo.hide()
         elif len(buildings_map) == 1:
             idx = list(buildings_map.keys())[0]

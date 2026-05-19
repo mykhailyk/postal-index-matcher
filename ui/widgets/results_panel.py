@@ -19,6 +19,7 @@ class ResultsPanel(QWidget):
         super().__init__(parent)
         self.current_results = []
         self.font_size = 9
+        self.current_address_font_size = 11
         self.buildings_per_line = 20
         self.init_ui()
     
@@ -35,10 +36,7 @@ class ResultsPanel(QWidget):
         self.current_address_label = QLabel("Поточна адреса: -")
         self.current_address_label.setWordWrap(True)
         self.current_address_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.current_address_label.setStyleSheet(
-            "background-color: #f6f8fa; border: 1px solid #d0d7de; "
-            "padding: 6px; font-size: 11px; color: #24292f;"
-        )
+        self._apply_current_address_style()
         layout.addWidget(self.current_address_label)
         
         # Контроль кількості результатів та налаштування
@@ -65,6 +63,14 @@ class ResultsPanel(QWidget):
         self.font_size_spin.setMaximumWidth(50)
         self.font_size_spin.valueChanged.connect(self.on_font_size_changed)
         control_layout.addWidget(self.font_size_spin)
+
+        control_layout.addWidget(QLabel(" | Адреса:"))
+        self.current_address_font_spin = QSpinBox()
+        self.current_address_font_spin.setRange(9, 18)
+        self.current_address_font_spin.setValue(self.current_address_font_size)
+        self.current_address_font_spin.setMaximumWidth(50)
+        self.current_address_font_spin.valueChanged.connect(self.on_current_address_font_size_changed)
+        control_layout.addWidget(self.current_address_font_spin)
         
         control_layout.addWidget(QLabel(" | Будинків:"))
         self.buildings_spin = QSpinBox()
@@ -167,6 +173,17 @@ class ResultsPanel(QWidget):
         self.font_size = value
         if self.current_results:
             self.show_results(self.current_results, "")
+
+    def on_current_address_font_size_changed(self, value):
+        """Зміна розміру рядка поточної адреси."""
+        self.current_address_font_size = value
+        self._apply_current_address_style()
+
+    def _apply_current_address_style(self):
+        self.current_address_label.setStyleSheet(
+            "background-color: #f6f8fa; border: 1px solid #d0d7de; "
+            f"padding: 6px; font-size: {self.current_address_font_size}px; color: #24292f;"
+        )
     
     def on_buildings_count_changed(self, value):
         """Зміна кількості будинків на рядок"""

@@ -454,6 +454,14 @@ class HybridSearch:
         
         # Має бути ТІЛЬКИ ОДИН результат з високою впевненістю
         if len(perfect_results) != 1:
+            very_high_results = [
+                r for r in perfect_results
+                if r.get('confidence', 0) >= 98
+            ]
+            if len(very_high_results) == 1:
+                perfect_results = very_high_results
+
+        if len(perfect_results) != 1:
             unique_indexes = {
                 (r.get('index') or '').strip().lstrip('0')
                 for r in perfect_results
