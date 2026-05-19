@@ -91,6 +91,39 @@ class TestHybridSearch(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result['index'], '51912')
 
+    def test_deduplicate_equivalent_general_results_prefers_lower_index(self):
+        results = [
+            {
+                'region': 'Чернігівська',
+                'district': 'Чернігівський',
+                'city': 'с. Старий Білоус',
+                'street': 'Загальний для н.п. (вулицю не знайдено)',
+                'building': '',
+                'buildings': '',
+                'index': '15504',
+                'score': 0.89,
+                'confidence': 89,
+                'is_general': True,
+            },
+            {
+                'region': 'Чернігівська',
+                'district': 'Чернігівський',
+                'city': 'с. Старий Білоус',
+                'street': 'Загальний для н.п. (вулицю не знайдено)',
+                'building': '',
+                'buildings': '',
+                'index': '15304',
+                'score': 0.89,
+                'confidence': 89,
+                'is_general': True,
+            },
+        ]
+
+        deduped = self.search._deduplicate_equivalent_results(results)
+
+        self.assertEqual(len(deduped), 1)
+        self.assertEqual(deduped[0]['index'], '15304')
+
     def test_find_auto_result_wrong_building(self):
         """Тест коли будинок не співпадає"""
         address = Address(city="Київ", street="Хрещатик", building="999")

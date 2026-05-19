@@ -168,6 +168,7 @@ class HybridSearch:
         
         # 3. Сортуємо за score
         scored_results.sort(key=lambda x: x['score'], reverse=True)
+        scored_results = self._deduplicate_equivalent_results(scored_results)
         
         # 4. Визначаємо можливість автопідстановки
         auto_result = self._find_auto_result(address, scored_results)
@@ -201,6 +202,7 @@ class HybridSearch:
                 
                 # Сортуємо знову
                 scored_results.sort(key=lambda x: x['score'], reverse=True)
+                scored_results = self._deduplicate_equivalent_results(scored_results)
                 
                 # Спробуємо знайти авто-результат знову (вже з загальними)
                 # Для загальних індексів дозволяємо автопідстановку якщо це єдиний варіант
@@ -416,6 +418,45 @@ class HybridSearch:
             results.append(result)
             
         return results
+
+    def _deduplicate_equivalent_results(self, results: List[Dict]) -> List[Dict]:
+        """Згортає однакові адресні результати, які відрізняються тільки індексом."""
+        deduped = {}
+
+        for result in results:
+            key = (
+                self.normalizer.normalize_text(result.get('region', '')),
+                self.normalizer.normalize_text(result.get('district', '')),
+                self.normalizer.normalize_city(result.get('city', '')),
+                self.normalizer.normalize_street(result.get('street', '')),
+                self._normalize_building_for_match(result.get('building') or result.get('buildings', '')),
+                bool(result.get('is_general')),
+            )
+            existing = deduped.get(key)
+            if not existing:
+                deduped[key] = result
+                continue
+
+            result_confidence = result.get('confidence', 0)
+            existing_confidence = existing.get('confidence', 0)
+            result_index = str(result.get('index') or '')
+            existing_index = str(existing.get('index') or '')
+
+            if (
+                result_confidence > existing_confidence
+                or (
+                    result_confidence == existing_confidence
+                    and result_index
+                    and (not existing_index or result_index < existing_index)
+                )
+            ):
+                deduped[key] = result
+
+        return sorted(
+            deduped.values(),
+            key=lambda r: (r.get('score', 0), r.get('confidence', 0)),
+            reverse=True,
+        )
 
     def _find_auto_result(self, address: Address, results: List[Dict], allow_general: bool = False) -> Optional[Dict]:
         """
