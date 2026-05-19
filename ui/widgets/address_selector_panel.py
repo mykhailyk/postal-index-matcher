@@ -217,8 +217,8 @@ class AddressSelectorPanel(QWidget):
         self.cascade_street_list = QListWidget(self)
         self.cascade_street_list.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.cascade_street_list.setAttribute(Qt.WA_ShowWithoutActivating)
-        self.cascade_street_list.setMinimumHeight(200)
-        self.cascade_street_list.setMaximumHeight(300)
+        self.cascade_street_list.setMinimumHeight(120)
+        self.cascade_street_list.setMaximumHeight(140)
         self.cascade_street_list.setWordWrap(True)
         self.cascade_street_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.cascade_street_list.setStyleSheet("""
@@ -255,6 +255,7 @@ class AddressSelectorPanel(QWidget):
         self.cascade_building_combo.view().setMinimumWidth(250)
         self.cascade_building_combo.hide()
         form.addWidget(self.cascade_building_combo)
+        form.addSpacing(24)
         
         # === ІНДЕКС ===
         index_label = QLabel("→ Індекс:")
@@ -271,14 +272,14 @@ class AddressSelectorPanel(QWidget):
         )
         form.addWidget(self.cascade_index_input)
         
-        layout.addLayout(form)
-        
         apply_btn = QPushButton("✓ Застосувати індекс")
         apply_btn.clicked.connect(self.on_cascade_apply_index)
         apply_btn.setStyleSheet(
             "background-color: #FF9800; color: white; padding: 10px; font-weight: bold;"
         )
-        layout.addWidget(apply_btn)
+        form.addWidget(apply_btn)
+
+        layout.addLayout(form)
         
         layout.addStretch()
         panel.setLayout(layout)

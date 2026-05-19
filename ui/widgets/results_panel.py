@@ -123,14 +123,6 @@ class ResultsPanel(QWidget):
             return
 
         parts = []
-        if row_number is not None:
-            parts.append(f"Рядок {row_number}")
-        if getattr(address, 'index', None):
-            parts.append(f"індекс: {address.index}")
-        if getattr(address, 'region', None):
-            parts.append(f"обл.: {address.region}")
-        if getattr(address, 'district', None):
-            parts.append(f"р-н: {address.district}")
         if getattr(address, 'city', None):
             parts.append(f"н.п.: {address.city}")
         if getattr(address, 'street', None):
