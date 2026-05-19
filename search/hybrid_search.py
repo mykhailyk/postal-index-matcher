@@ -163,7 +163,7 @@ class HybridSearch:
             score = self._calculate_score_strict(address, candidate)
             
             if score >= config.SIMILARITY_THRESHOLD:
-                result = self._create_result(candidate, score)
+                result = self._create_result(candidate, score, address)
                 scored_results.append(result)
         
         # 3. Сортуємо за score
@@ -495,6 +495,19 @@ class HybridSearch:
         
         # Має бути ТІЛЬКИ ОДИН результат з високою впевненістю
         if len(perfect_results) != 1:
+            ordered_by_confidence = sorted(
+                perfect_results,
+                key=lambda r: (r.get('confidence', 0), r.get('score', 0)),
+                reverse=True,
+            )
+            if (
+                len(ordered_by_confidence) >= 2
+                and ordered_by_confidence[0].get('confidence', 0) >= getattr(config, 'AUTO_INDEX_CORRECTION_CONFIDENCE', 98)
+                and ordered_by_confidence[0].get('confidence', 0) > ordered_by_confidence[1].get('confidence', 0)
+            ):
+                perfect_results = [ordered_by_confidence[0]]
+
+        if len(perfect_results) != 1:
             very_high_results = [
                 r for r in perfect_results
                 if r.get('confidence', 0) >= 98
@@ -773,7 +786,27 @@ class HybridSearch:
             return ""
         return cleaned.lstrip('0')
     
-    def _create_result(self, record: MagistralRecord, score: float) -> Dict:
+    def _confidence_for_result(self, record: MagistralRecord, score: float, address: Address = None) -> int:
+        confidence = int(score * 100)
+        if not address or confidence < 100:
+            return confidence
+
+        query_street_options = self.normalizer.normalize_street_aliases(address.street, address.city)
+        record_street = record.normalized_street or self.normalizer.normalize_street(record.street)
+        exact_street = record_street and record_street in query_street_options
+
+        query_building = self._normalize_building_for_match(address.building)
+        raw_buildings_list = [b.strip() for b in str(record.buildings or "").split(",") if b.strip()]
+        exact_building = (
+            not query_building
+            or query_building in [self._normalize_building_for_match(b) for b in raw_buildings_list]
+        )
+
+        if not exact_street or not exact_building:
+            return 99
+        return confidence
+
+    def _create_result(self, record: MagistralRecord, score: float, address: Address = None) -> Dict:
         """Створює результат з усією інформацією"""
         return {
             'region': record.region,
@@ -786,7 +819,7 @@ class HybridSearch:
             'buildings': record.buildings,
             'index': record.city_index,
             'score': score,
-            'confidence': int(score * 100),
+            'confidence': self._confidence_for_result(record, score, address),
             'features': record.features,
             'not_working': record.not_working,
             'is_working': record.is_working()

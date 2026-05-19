@@ -121,6 +121,33 @@ class TestHybridSearch(unittest.TestCase):
 
         self.assertIsNone(result)
 
+    def test_find_auto_result_uses_unique_best_confidence(self):
+        address = Address(city="Запоріжжя", street="ГДАНСЬКА", building="5")
+
+        results = [
+            {'index': '69089', 'confidence': 100, 'score': 1.0, 'buildings': '1,2,3,4,5'},
+            {'index': '69039', 'confidence': 99, 'score': 1.0, 'buildings': '1,2,3,4,5'},
+            {'index': '69083', 'confidence': 91, 'score': 0.91, 'buildings': '5'},
+        ]
+
+        result = self.search._find_auto_result(address, results)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result['index'], '69089')
+
+    def test_find_auto_result_keeps_equal_best_confidence_manual(self):
+        address = Address(city="Василівка", street="МИРУ", building="16")
+
+        results = [
+            {'index': '51273', 'confidence': 100, 'score': 1.0, 'buildings': '1,2,16'},
+            {'index': '28115', 'confidence': 100, 'score': 1.0, 'buildings': '1,2,16'},
+            {'index': '71602', 'confidence': 99, 'score': 0.99, 'buildings': '16'},
+        ]
+
+        result = self.search._find_auto_result(address, results)
+
+        self.assertIsNone(result)
+
     def test_deduplicate_equivalent_general_results_prefers_lower_index(self):
         results = [
             {
@@ -153,6 +180,34 @@ class TestHybridSearch(unittest.TestCase):
 
         self.assertEqual(len(deduped), 1)
         self.assertEqual(deduped[0]['index'], '15304')
+
+    def test_create_result_caps_fuzzy_street_at_99_confidence(self):
+        address = Address(city="Запоріжжя", street="ГДАНСЬКА", building="5")
+        record = MagistralRecord(
+            city="м. Запоріжжя",
+            street="вул. Громадянська",
+            buildings="1,2,3,4,5",
+            city_index="69039",
+        )
+        record.normalized_street = self.search.normalizer.normalize_street(record.street)
+
+        result = self.search._create_result(record, 1.0, address)
+
+        self.assertEqual(result['confidence'], 99)
+
+    def test_create_result_keeps_exact_street_at_100_confidence(self):
+        address = Address(city="Запоріжжя", street="ГДАНСЬКА", building="5")
+        record = MagistralRecord(
+            city="м. Запоріжжя",
+            street="вул. Гданська",
+            buildings="1,2,3,4,5",
+            city_index="69089",
+        )
+        record.normalized_street = self.search.normalizer.normalize_street(record.street)
+
+        result = self.search._create_result(record, 1.0, address)
+
+        self.assertEqual(result['confidence'], 100)
 
     def test_find_auto_result_wrong_building(self):
         """Тест коли будинок не співпадає"""
