@@ -104,6 +104,8 @@ AUTO_PROCESSING_THRESHOLD = 90  # 90% за замовчуванням (може 
 AUTO_MATCH_CONFIDENCE = 90        # Мінімальна впевненість для авто-підстановки (0-100)
 STRICT_MATCH_CITY_THRESHOLD = 0.90 # Поріг схожості міста для авто-підстановки
 STRICT_MATCH_STREET_THRESHOLD = 0.85 # Поріг схожості вулиці для авто-підстановки
+ALLOW_AUTO_INDEX_CORRECTION = True  # Дозволяє автовиправлення вхідного індексу при дуже точному збігу адреси
+AUTO_INDEX_CORRECTION_CONFIDENCE = 98  # Мінімальна впевненість для автокорекції індексу
 
 # Ваги та пороги для розрахунку score (HybridSearch)
 SCORE_CITY_WEIGHT = 0.35          # Вага міста

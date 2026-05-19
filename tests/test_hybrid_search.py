@@ -91,6 +91,36 @@ class TestHybridSearch(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result['index'], '51912')
 
+    def test_find_auto_result_allows_exact_index_correction(self):
+        address = Address(city="Житомир", street="пр-т Миру", building="2", index="10001")
+
+        results = [{
+            'index': '10020',
+            'confidence': 100,
+            'score': 1.0,
+            'buildings': '1,1Б,2,3',
+        }]
+
+        result = self.search._find_auto_result(address, results)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result['index'], '10020')
+
+    def test_find_auto_result_does_not_correct_real_index_with_general_result(self):
+        address = Address(city="Старий Білоус", street="Невідома", building="43", index="01001")
+
+        results = [{
+            'index': '15504',
+            'confidence': 98,
+            'score': 0.98,
+            'buildings': '',
+            'is_general': True,
+        }]
+
+        result = self.search._find_auto_result(address, results)
+
+        self.assertIsNone(result)
+
     def test_deduplicate_equivalent_general_results_prefers_lower_index(self):
         results = [
             {

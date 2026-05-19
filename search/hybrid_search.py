@@ -519,11 +519,21 @@ class HybridSearch:
             result_index = result['index'].strip().lstrip('0') if result['index'] else ''
             
             if query_index != result_index:
-                self.logger.debug(
-                    f"Автопідстановка неможлива: індекс не співпадає "
-                    f"(запит: {query_index}, результат: {result_index})"
+                can_correct_index = (
+                    getattr(config, 'ALLOW_AUTO_INDEX_CORRECTION', False)
+                    and not result.get('is_general')
+                    and result.get('confidence', 0) >= getattr(config, 'AUTO_INDEX_CORRECTION_CONFIDENCE', 98)
                 )
-                return None
+                if not can_correct_index:
+                    self.logger.debug(
+                        f"Автопідстановка неможлива: індекс не співпадає "
+                        f"(запит: {query_index}, результат: {result_index})"
+                    )
+                    return None
+                self.logger.debug(
+                    f"Автопідстановка виправляє індекс: "
+                    f"{query_index} -> {result_index} ({result.get('confidence', 0)}%)"
+                )
         
         # Перевіряємо ТОЧНЕ співпадіння будинку (ТІЛЬКИ для НЕ загальних результатів)
         if not result.get('is_general') and address.building and address.building.strip():
