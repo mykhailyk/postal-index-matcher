@@ -32,6 +32,7 @@ class MagistralLoader:
         self.records: List[MagistralRecord] = []
         self.index_by_city_prefix: Dict[str, List[int]] = {}
         self.index_by_region: Dict[str, List[int]] = {}
+        self.index_by_postcode: Dict[str, List[int]] = {}
     
     def load(self, force_reload: bool = False) -> List[MagistralRecord]:
         """
@@ -143,6 +144,7 @@ class MagistralLoader:
         """Будує індекси для швидкого пошуку"""
         self.index_by_city_prefix = {}
         self.index_by_region = {}
+        self.index_by_postcode = {}
         
         for i, record in enumerate(self.records):
             # Індекс по перших 2-3 літерах міста
@@ -159,9 +161,16 @@ class MagistralLoader:
                 if record.normalized_region not in self.index_by_region:
                     self.index_by_region[record.normalized_region] = []
                 self.index_by_region[record.normalized_region].append(i)
+
+            postcode = self._normalize_postcode(record.city_index)
+            if postcode:
+                if postcode not in self.index_by_postcode:
+                    self.index_by_postcode[postcode] = []
+                self.index_by_postcode[postcode].append(i)
         
         print(f"✓ Індекс міст: {len(self.index_by_city_prefix)} префіксів")
         print(f"✓ Індекс областей: {len(self.index_by_region)} областей")
+        print(f"✓ Індекс поштових індексів: {len(self.index_by_postcode)} індексів")
     
     def _save_to_cache(self):
         """Зберігає в pickle кеш БЕЗ компресії (швидше!)"""
@@ -170,7 +179,8 @@ class MagistralLoader:
         cache_data = {
             'records': self.records,
             'index_by_city_prefix': self.index_by_city_prefix,
-            'index_by_region': self.index_by_region
+            'index_by_region': self.index_by_region,
+            'index_by_postcode': self.index_by_postcode
         }
         
         # Зберігаємо БЕЗ компресії - у 4-6 разів швидше!
@@ -189,6 +199,9 @@ class MagistralLoader:
             self.records = cache_data['records']
             self.index_by_city_prefix = cache_data['index_by_city_prefix']
             self.index_by_region = cache_data['index_by_region']
+            self.index_by_postcode = cache_data.get('index_by_postcode', {})
+            if not self.index_by_postcode:
+                self._build_indexes()
             
             print(f"✅ Завантажено з кешу: {len(self.records)} записів")
             return self.records
@@ -229,6 +242,24 @@ class MagistralLoader:
         
         indices = self.index_by_region[region_norm]
         return [self.records[i] for i in indices]
+
+    def get_candidates_by_postcode(self, postcode: str) -> List[MagistralRecord]:
+        """Швидкий пошук кандидатів за точним поштовим індексом."""
+        normalized_postcode = self._normalize_postcode(postcode)
+        if not normalized_postcode:
+            return []
+
+        indices = self.index_by_postcode.get(normalized_postcode, [])
+        return [self.records[i] for i in indices]
+
+    @staticmethod
+    def _normalize_postcode(postcode: str) -> str:
+        cleaned = str(postcode or "").strip().replace(" ", "").replace("\x00", "")
+        if cleaned in {"*", "00000", "01000"}:
+            return ""
+        if not cleaned.isdigit():
+            return ""
+        return cleaned.zfill(5)
 
     def get_min_index_for_city(self, city: str, region: str = None, district: str = None) -> str:
         """

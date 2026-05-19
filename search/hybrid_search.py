@@ -526,8 +526,12 @@ class HybridSearch:
         
         # Стратегія 3: Пошук по індексу якщо заданий
         if address.index and len(address.index) >= 4:
-            # Тут можна додати пошук по індексу якщо є така можливість
-            pass
+            postcode_candidates = self.loader.get_candidates_by_postcode(address.index)
+            existing_ids = {id(c) for c in candidates}
+            for pc in postcode_candidates:
+                if id(pc) not in existing_ids:
+                    candidates.append(pc)
+                    existing_ids.add(id(pc))
         
         # Обмежуємо кількість кандидатів
         if len(candidates) > config.MAX_CANDIDATES:
