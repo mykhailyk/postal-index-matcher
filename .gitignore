@@ -4,10 +4,12 @@ __pycache__/
 *$py.class
 *.pyc
 
+
 # Кеш та тимчасові файли
 cache/
 *.pkl
 *.pkl.xz
+
 
 # Логи
 logs/
