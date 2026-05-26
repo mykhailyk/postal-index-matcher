@@ -82,6 +82,32 @@ class TestHybridSearch(unittest.TestCase):
         score = self.search._calculate_score_strict(address, record)
         self.assertGreaterEqual(score, 0.95)
 
+    def test_calculate_score_preserves_slash_in_building_number(self):
+        address = Address(city="Київ", street="Дегтярівська", building="43/5")
+        record = MagistralRecord(
+            region="Київ", new_district="Київ", city="м. Київ",
+            street="вул. Дегтярівська", buildings="43,43/1,43/2,43/5", city_index="03113"
+        )
+        record.normalized_city = self.search.normalizer.normalize_city(record.city)
+        record.normalized_street = self.search.normalizer.normalize_street(record.street)
+
+        score = self.search._calculate_score_strict(address, record)
+
+        self.assertGreaterEqual(score, 0.95)
+
+    def test_calculate_score_allows_generic_street_prefix_for_exact_highway_name(self):
+        address = Address(city="Київ", street="вул. Харківське шосе", building="168")
+        record = MagistralRecord(
+            region="Київ", new_district="Київ", city="м. Київ",
+            street="шосе Харківське", buildings="168,168Г", city_index="02091"
+        )
+        record.normalized_city = self.search.normalizer.normalize_city(record.city)
+        record.normalized_street = self.search.normalizer.normalize_street(record.street)
+
+        score = self.search._calculate_score_strict(address, record)
+
+        self.assertGreaterEqual(score, 0.95)
+
     def test_calculate_score_strict_partial_match(self):
         """Тест часткового співпадіння (помилка в вулиці)"""
         address = Address(city="Київ", street="Хрещ", building="1") # Помилка

@@ -667,7 +667,7 @@ class HybridSearch:
         query_street_options = self.normalizer.normalize_street_aliases(address.street, address.city)
         query_street = query_street_options[0] if query_street_options else ""
         query_street_type = self.normalizer.detect_street_type(address.street)
-        query_building = self.normalizer.normalize_text(address.building) if address.building else ""
+        query_building = str(address.building or "").strip()
         query_index = self._normalize_query_index(address.index)
         query_region = self.normalizer.normalize_region(address.region) if address.region else ""
         
@@ -722,7 +722,7 @@ class HybridSearch:
                 for street_option in query_street_options
             )
             record_street_type = self.normalizer.detect_street_type(record.street)
-            if query_street_type and record_street_type and query_street_type != record_street_type:
+            if self._is_street_type_conflict(query_street_type, record_street_type, street_similarity):
                 street_similarity = max(0.0, street_similarity - 0.25)
             
             # ЖОРСТКИЙ ФІЛЬТР: вулиця має бути досить схожою
@@ -810,6 +810,14 @@ class HybridSearch:
     def _has_letter_suffix(building: str) -> bool:
         cleaned = str(building or "").upper().replace(" ", "").strip()
         return bool(re.match(r"^\d+(?:/\d+)?-?[A-ZА-ЯІЇЄҐ]$", cleaned, flags=re.IGNORECASE))
+
+    @staticmethod
+    def _is_street_type_conflict(query_type: str, record_type: str, street_similarity: float) -> bool:
+        if not query_type or not record_type or query_type == record_type:
+            return False
+        if query_type == "street" and street_similarity >= 0.98:
+            return False
+        return True
 
     @staticmethod
     def _normalize_query_index(index: str) -> str:

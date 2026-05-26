@@ -55,6 +55,13 @@ def test_normalizes_extra_street_prefixes():
     assert normalizer.normalize_street("прт.Г.Сталінграда") == normalizer.normalize_street("Г.Сталінграда")
 
 
+def test_normalizes_trailing_road_type_after_generic_street_prefix():
+    normalizer = TextNormalizer()
+
+    assert normalizer.normalize_street("вул. Харківське шосе") == normalizer.normalize_street("шосе Харківське")
+    assert normalizer.detect_street_type("вул. Харківське шосе") == "highway"
+
+
 def test_city_specific_street_rename_aliases():
     normalizer = TextNormalizer()
 

@@ -113,6 +113,12 @@ class TextNormalizer:
             return ""
         
         street = self._strip_street_prefix(street)
+        street = re.sub(
+            r'\s+(?:шосе|просп(?:ект)?|просп\.?|пр-т|прт\.?|бульв(?:ар)?|бульв\.?|пров(?:улок)?|пров\.?)\.?\s*$',
+            '',
+            street,
+            flags=re.IGNORECASE,
+        )
         
         # Розширюємо скорочення
         # "л." -> "лесі", "т." -> "тараса", "б." -> "богдана"
@@ -182,6 +188,16 @@ class TextNormalizer:
             return ""
 
         street = street.strip().lower()
+        suffix_type_patterns = [
+            ("highway", r"\bшосе$"),
+            ("avenue", r"\b(?:просп(?:ект)?|просп\.?|пр-т|прт\.?)$"),
+            ("boulevard", r"\b(?:бульв(?:ар)?|бульв\.?)$"),
+            ("lane", r"\b(?:пров(?:улок)?|пров\.?)$"),
+        ]
+        for street_type, pattern in suffix_type_patterns:
+            if re.search(pattern, street, flags=re.IGNORECASE):
+                return street_type
+
         type_patterns = [
             ("lane", r"^(?:пров(?:улок)?|пров\.)\b"),
             ("avenue", r"^(?:просп(?:ект)?|пр-т|прт\.?|пр\.?)\b"),
