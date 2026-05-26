@@ -272,7 +272,7 @@ class HybridSearch:
             return
 
         parts = [p.strip() for p in address.street.split(",") if p.strip()]
-        if len(parts) < 3:
+        if len(parts) < 2:
             return
 
         first_part_with_index = re.match(r"^(\d{4,5})\s+(.+)$", parts[0])
@@ -288,7 +288,7 @@ class HybridSearch:
             return
 
         city = ""
-        street_idx = 1
+        street_idx = 0 if address.city else 1
 
         for idx, part in enumerate(parts[:3]):
             part_norm = self.normalizer.normalize_text(part)
@@ -297,9 +297,15 @@ class HybridSearch:
                 street_idx = idx + 1
                 break
 
-        if not city and not address.city:
-            city = parts[0]
-            street_idx = 1
+        if not city:
+            if address.city and parts:
+                first_part_city = self.normalizer.normalize_city(parts[0])
+                current_city = self.normalizer.normalize_city(address.city)
+                if first_part_city and current_city and first_part_city == current_city:
+                    street_idx = 1
+            elif not address.city:
+                city = parts[0]
+                street_idx = 1
 
         if city and (not address.city or re.match(r"^г\.?\s*", address.city.strip(), re.IGNORECASE)):
             address.city = city
@@ -340,24 +346,44 @@ class HybridSearch:
     @staticmethod
     def _extract_building_from_full_address_parts(parts: List[str]) -> str:
         building_pattern = r"\d+(?:[-/]\d+)?(?:[-\s]?[а-яА-Яa-zA-ZіїєґІЇЄҐ])?"
+        apartment_prefix = r"^\s*(?:кв\.?|квартира|пом\.?|прим\.?|офіс|оф\.?|office|apt\.?)\b"
+
+        def find_building(value: str, require_building_prefix: bool) -> str:
+            if re.search(apartment_prefix, value, flags=re.IGNORECASE):
+                return ""
+
+            if require_building_prefix:
+                match = re.search(
+                    rf"(?:буд\.?|будинок|д\.?)\s*({building_pattern})(?=\s|,|$|корп|корпус|кв|офіс)",
+                    value,
+                    flags=re.IGNORECASE,
+                )
+                return match.group(1).strip() if match else ""
+
+            match = re.search(
+                rf"({building_pattern})(?=\s|,|$|корп|корпус|кв|офіс)",
+                value,
+                flags=re.IGNORECASE,
+            )
+            return match.group(1).strip() if match else ""
+
         for part in parts:
             value = part.strip()
             if not value or value in {"*", "#", "#-"}:
                 continue
 
-            match = re.search(
-                rf"(?:буд\.?|будинок|д\.?)\s*({building_pattern})(?=\s|,|$|корп|корпус|кв|офіс)",
-                value,
-                flags=re.IGNORECASE,
-            )
-            if not match:
-                match = re.search(
-                    rf"({building_pattern})(?=\s|,|$|корп|корпус|кв|офіс)",
-                    value,
-                    flags=re.IGNORECASE,
-                )
-            if match:
-                return match.group(1).strip()
+            building = find_building(value, require_building_prefix=True)
+            if building:
+                return building
+
+        for part in parts:
+            value = part.strip()
+            if not value or value in {"*", "#", "#-"}:
+                continue
+
+            building = find_building(value, require_building_prefix=False)
+            if building:
+                return building
 
         return ""
     

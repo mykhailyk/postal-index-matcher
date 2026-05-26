@@ -121,6 +121,28 @@ def test_preprocesses_full_address_with_inline_index():
     assert address.building == "357"
 
 
+def test_preprocesses_street_building_apartment_when_city_is_mapped_separately():
+    search = HybridSearch(lazy_load=True)
+    address = Address(
+        city="Київ",
+        street="вул.Саксаганського, буд.27, кв.47",
+        building="вул.Саксаганського, буд.27, кв.47",
+    )
+
+    if search.normalizer.normalize_text(address.street) == search.normalizer.normalize_text(address.building):
+        address.building = ""
+    search._preprocess_full_address(address)
+
+    assert address.city == "Київ"
+    assert address.street == "вул.Саксаганського"
+    assert address.building == "27"
+
+
+def test_extract_building_ignores_apartment_part():
+    assert HybridSearch._extract_building_from_full_address_parts(["буд.27", "кв.47"]) == "27"
+    assert HybridSearch._extract_building_from_full_address_parts(["кв.47"]) == ""
+
+
 def test_swaps_region_and_district_when_mapping_is_reversed():
     address = Address(region="Києво-Святошинський р-н", district="Київська обл.")
 
