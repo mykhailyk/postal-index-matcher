@@ -118,6 +118,59 @@ class UkrposhtaClassifierClient:
             for item in entries
         ]
 
+    def get_regions(self, region_name: str = "") -> List[Dict[str, str]]:
+        return self._entries(
+            "get_regions_by_region_ua",
+            {"region_name": region_name or ""},
+        )
+
+    def get_districts(self, region_id: str = "", district_ua: str = "") -> List[Dict[str, str]]:
+        params = {}
+        if region_id:
+            params["region_id"] = region_id
+        if district_ua:
+            params["district_ua"] = district_ua
+        return self._entries("get_districts_by_region_id_and_district_ua", params)
+
+    def get_cities(
+        self,
+        region_id: str = "",
+        district_id: str = "",
+        city_ua: str = "",
+        koatuu: str = "",
+        katottg: str = "",
+    ) -> List[Dict[str, str]]:
+        params = {}
+        if region_id:
+            params["region_id"] = region_id
+        if district_id:
+            params["district_id"] = district_id
+        if city_ua:
+            params["city_ua"] = city_ua
+        if koatuu:
+            params["koatuu"] = koatuu
+        if katottg:
+            params["katottg"] = katottg
+        return self._entries("get_city_by_region_id_and_district_id_and_city_ua", params)
+
+    def get_streets(
+        self,
+        region_id: str = "",
+        district_id: str = "",
+        city_id: str = "",
+        street_ua: str = "",
+    ) -> List[Dict[str, str]]:
+        params = {}
+        if region_id:
+            params["region_id"] = region_id
+        if district_id:
+            params["district_id"] = district_id
+        if city_id:
+            params["city_id"] = city_id
+        if street_ua:
+            params["street_ua"] = street_ua
+        return self._entries("get_street_by_region_id_and_district_id_and_city_id_and_street_ua", params)
+
     def get_cities_by_name(self, city_name: str) -> List[ClassifierCity]:
         entries = self._entries(
             "get_city_by_region_id_and_district_id_and_city_ua",

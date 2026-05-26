@@ -10,6 +10,7 @@ from search.normalizer import TextNormalizer
 from search.similarity import SimilarityCalculator
 from search.magistral_loader import MagistralLoader
 from search.ukrposhta_classifier import UkrposhtaClassifierClient
+from search.ukrposhta_offline_cache import UkrposhtaOfflineCacheClient
 from utils.logger import Logger
 import config
 
@@ -27,7 +28,13 @@ class HybridSearch:
         self.normalizer = TextNormalizer()
         self.similarity = SimilarityCalculator()
         self.loader = MagistralLoader()
-        self.classifier = UkrposhtaClassifierClient() if config.UKRPOSHTA_CLASSIFIER_ENABLED else None
+        offline_classifier = UkrposhtaOfflineCacheClient()
+        if offline_classifier.enabled:
+            self.classifier = offline_classifier
+        elif config.UKRPOSHTA_CLASSIFIER_ENABLED:
+            self.classifier = UkrposhtaClassifierClient()
+        else:
+            self.classifier = None
         self.logger = Logger()
         
         self.magistral_records = []

@@ -17,6 +17,7 @@ class TopPanel(QFrame):
     undo_clicked = pyqtSignal()
     redo_clicked = pyqtSignal()
     refresh_cache_clicked = pyqtSignal()
+    refresh_classifier_cache_clicked = pyqtSignal()
     filter_changed = pyqtSignal(str)
     
     def __init__(self, parent=None):
@@ -104,6 +105,12 @@ class TopPanel(QFrame):
         refresh_cache_btn.clicked.connect(self.refresh_cache_clicked.emit)
         refresh_cache_btn.setToolTip("Оновити кеш magistral.csv")
         row1.addWidget(refresh_cache_btn)
+
+        self.classifier_cache_btn = QPushButton("🌐 Кеш Укрпошти")
+        self.classifier_cache_btn.setStyleSheet(AppStyles.button_default(font_size="11px"))
+        self.classifier_cache_btn.clicked.connect(self.refresh_classifier_cache_clicked.emit)
+        self.classifier_cache_btn.setToolTip("Викачати або оновити повний локальний кеш адресного класифікатора Укрпошти")
+        row1.addWidget(self.classifier_cache_btn)
         
         # Чекбокс збереження старого індексу
         self.save_old_index_checkbox = QCheckBox("Зберігати старий індекс")

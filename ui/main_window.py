@@ -4,6 +4,9 @@
 """
 import os
 import pandas as pd
+from pathlib import Path
+import subprocess
+import sys
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QPushButton, QLabel, QTableWidgetItem, QMessageBox,
@@ -51,6 +54,65 @@ class CacheLoaderThread(QThread):
         except Exception as e:
             self.progress.emit(f"❌ Помилка: {e}")
             self.finished.emit([])
+
+
+class ClassifierCacheBuildThread(QThread):
+    """Фоновий запуск побудови локального SQLite-кешу класифікатора Укрпошти."""
+
+    progress = pyqtSignal(str)
+    finished = pyqtSignal(bool, str)
+
+    def __init__(self, env_file: str = "", refresh: bool = False, include_houses: bool = True):
+        super().__init__()
+        self.env_file = env_file
+        self.refresh = refresh
+        self.include_houses = include_houses
+
+    def run(self):
+        script_path = Path(config.BASE_PATH) / "tools" / "build_ukrposhta_offline_cache.py"
+        if not script_path.exists():
+            self.finished.emit(False, f"Не знайдено скрипт кешу: {script_path}")
+            return
+
+        command = [sys.executable, str(script_path)]
+        if self.env_file:
+            command.extend(["--env-file", self.env_file])
+        if self.include_houses:
+            command.append("--include-houses")
+        if self.refresh:
+            command.append("--refresh")
+
+        env = os.environ.copy()
+        env.setdefault("PYTHONIOENCODING", "utf-8")
+
+        try:
+            process = subprocess.Popen(
+                command,
+                cwd=config.BASE_PATH,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
+            )
+            last_line = ""
+            assert process.stdout is not None
+            for raw_line in process.stdout:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                last_line = line
+                self.progress.emit(line)
+
+            return_code = process.wait()
+            if return_code == 0:
+                self.finished.emit(True, last_line or "Кеш класифікатора оновлено")
+            else:
+                self.finished.emit(False, last_line or f"Помилка оновлення кешу, код {return_code}")
+        except Exception as exc:
+            self.finished.emit(False, str(exc))
+
 
 class MainWindow(QMainWindow):
     """
@@ -250,6 +312,7 @@ class MainWindow(QMainWindow):
         self.top_panel.undo_clicked.connect(self.undo_action)
         self.top_panel.redo_clicked.connect(self.redo_action)
         self.top_panel.refresh_cache_clicked.connect(self.refresh_cache)
+        self.top_panel.refresh_classifier_cache_clicked.connect(self.refresh_classifier_cache)
         self.top_panel.filter_changed.connect(self.apply_filter)
 
     def _connect_table_panel_signals(self):
@@ -1214,6 +1277,78 @@ class MainWindow(QMainWindow):
                 self.status_bar.setText(f"❌ Помилка: {e}")
                 QMessageBox.critical(self, "Помилка", f"Не вдалося оновити кеш:\n{e}")
                 
+    def refresh_classifier_cache(self):
+        """Викачує або оновлює повний SQLite-кеш адресного класифікатора Укрпошти."""
+        if hasattr(self, "classifier_cache_thread") and self.classifier_cache_thread.isRunning():
+            QMessageBox.information(self, "Кеш Укрпошти", "Оновлення кешу вже виконується у фоні.")
+            return
+
+        env_file = self._resolve_ukrposhta_env_file()
+        has_token = bool(os.environ.get("UKRPOSHTA_BEARER_TOKEN")) or bool(env_file)
+        if not has_token:
+            QMessageBox.warning(
+                self,
+                "Кеш Укрпошти",
+                "Не знайдено UKRPOSHTA_BEARER_TOKEN.\n\n"
+                "Додайте токен у змінну середовища або вкажіть шлях до .env через UKRPOSHTA_ENV_FILE.",
+            )
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Кеш Укрпошти",
+            "Викачати або оновити локальний кеш адресного класифікатора Укрпошти?\n\n"
+            "Буде створено/оновлено SQLite-базу в папці cache. Уже завантажені свіжі частини "
+            "будуть пропущені, тому повторний запуск дозавантажує відсутнє або протерміноване.",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 0)
+        self.status_bar.setText("⏳ Кеш Укрпошти оновлюється у фоні...")
+        if self.top_panel and hasattr(self.top_panel, "classifier_cache_btn"):
+            self.top_panel.classifier_cache_btn.setEnabled(False)
+
+        self.classifier_cache_thread = ClassifierCacheBuildThread(env_file=env_file, refresh=False, include_houses=True)
+        self.classifier_cache_thread.progress.connect(self._on_classifier_cache_progress)
+        self.classifier_cache_thread.finished.connect(self._on_classifier_cache_finished)
+        self.classifier_cache_thread.start()
+
+    def _resolve_ukrposhta_env_file(self) -> str:
+        configured = os.environ.get("UKRPOSHTA_ENV_FILE", "")
+        if configured and os.path.exists(configured):
+            return configured
+
+        sibling_project_env = (
+            Path.home()
+            / "Documents"
+            / "ukrposgta-adress-matcher-with-adress-clasificator"
+            / ".env"
+        )
+        return str(sibling_project_env) if sibling_project_env.exists() else ""
+
+    def _on_classifier_cache_progress(self, message: str):
+        self.status_bar.setText(f"Кеш Укрпошти: {message}")
+        self.logger.info(f"Кеш Укрпошти: {message}")
+
+    def _on_classifier_cache_finished(self, success: bool, message: str):
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setVisible(False)
+        if self.top_panel and hasattr(self.top_panel, "classifier_cache_btn"):
+            self.top_panel.classifier_cache_btn.setEnabled(True)
+
+        if success:
+            from search.ukrposhta_offline_cache import UkrposhtaOfflineCacheClient
+
+            self.search_manager.search_engine.classifier = UkrposhtaOfflineCacheClient()
+            self.status_bar.setText("✅ Кеш Укрпошти оновлено")
+            QMessageBox.information(self, "Кеш Укрпошти", f"Кеш оновлено.\n\n{message}")
+        else:
+            self.status_bar.setText(f"❌ Помилка кешу Укрпошти: {message}")
+            QMessageBox.critical(self, "Кеш Укрпошти", f"Не вдалося оновити кеш:\n{message}")
+
 
     def parse_visible_addresses(self):
         """Парсить адреси у видимих (відфільтрованих) рядках"""
