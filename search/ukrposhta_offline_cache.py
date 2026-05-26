@@ -18,10 +18,20 @@ def init_ukrposhta_cache_schema(db_path: str) -> None:
                 region TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS global_snapshots (
+                snapshot_key TEXT PRIMARY KEY,
+                cached_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS districts (
                 district_id TEXT PRIMARY KEY,
                 region_id TEXT NOT NULL,
                 district TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS region_district_snapshots (
+                region_id TEXT PRIMARY KEY,
+                cached_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS cities (
@@ -34,6 +44,11 @@ def init_ukrposhta_cache_schema(db_path: str) -> None:
                 city_type_short TEXT,
                 old_city TEXT,
                 population INTEGER DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS district_city_snapshots (
+                district_id TEXT PRIMARY KEY,
+                cached_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS streets (

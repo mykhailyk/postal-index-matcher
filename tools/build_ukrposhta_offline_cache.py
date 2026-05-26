@@ -179,6 +179,18 @@ def street_houses_cached(conn, street_id: str, ttl_days: int) -> bool:
     return snapshot_is_fresh(conn, "house_snapshots", "street_id", street_id, ttl_days)
 
 
+def region_districts_cached(conn, region_id: str, ttl_days: int) -> bool:
+    return snapshot_is_fresh(conn, "region_district_snapshots", "region_id", region_id, ttl_days)
+
+
+def district_cities_cached(conn, district_id: str, ttl_days: int) -> bool:
+    return snapshot_is_fresh(conn, "district_city_snapshots", "district_id", district_id, ttl_days)
+
+
+def regions_cached(conn, ttl_days: int) -> bool:
+    return snapshot_is_fresh(conn, "global_snapshots", "snapshot_key", "regions", ttl_days)
+
+
 def snapshot_is_fresh(conn, table_name: str, key_column: str, key_value: str, ttl_days: int) -> bool:
     row = conn.execute(
         f"SELECT cached_at FROM {table_name} WHERE {key_column} = ? LIMIT 1",
@@ -207,6 +219,42 @@ def mark_city_streets_cached(conn, city_id: str) -> None:
     )
 
 
+def mark_region_districts_cached(conn, region_id: str) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """
+        INSERT INTO region_district_snapshots (region_id, cached_at)
+        VALUES (?, ?)
+        ON CONFLICT(region_id) DO UPDATE SET cached_at = excluded.cached_at
+        """,
+        (region_id, now),
+    )
+
+
+def mark_regions_cached(conn) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """
+        INSERT INTO global_snapshots (snapshot_key, cached_at)
+        VALUES ('regions', ?)
+        ON CONFLICT(snapshot_key) DO UPDATE SET cached_at = excluded.cached_at
+        """,
+        (now,),
+    )
+
+
+def mark_district_cities_cached(conn, district_id: str) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """
+        INSERT INTO district_city_snapshots (district_id, cached_at)
+        VALUES (?, ?)
+        ON CONFLICT(district_id) DO UPDATE SET cached_at = excluded.cached_at
+        """,
+        (district_id, now),
+    )
+
+
 def mark_street_houses_cached(conn, street_id: str) -> None:
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
@@ -217,6 +265,46 @@ def mark_street_houses_cached(conn, street_id: str) -> None:
         """,
         (street_id, now),
     )
+
+
+def cached_regions(conn) -> list[dict[str, str]]:
+    rows = conn.execute(
+        """
+        SELECT region_id AS REGION_ID, region AS REGION_UA
+        FROM regions
+        ORDER BY region
+        """
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def cached_districts(conn, region_id: str) -> list[dict[str, str]]:
+    rows = conn.execute(
+        """
+        SELECT district_id AS DISTRICT_ID, region_id AS REGION_ID, district AS DISTRICT_UA
+        FROM districts
+        WHERE region_id = ?
+        ORDER BY district
+        """,
+        (region_id,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def cached_cities(conn, district_id: str) -> list[dict[str, str]]:
+    rows = conn.execute(
+        """
+        SELECT city_id AS CITY_ID, region_id AS REGION_ID, district_id AS DISTRICT_ID,
+               region AS REGION_UA, district AS DISTRICT_UA, city AS CITY_UA,
+               city_type_short AS SHORTCITYTYPE_UA, old_city AS OLDCITY_UA,
+               population AS POPULATION
+        FROM cities
+        WHERE district_id = ?
+        ORDER BY city
+        """,
+        (district_id,),
+    ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def cached_streets(conn, city_id: str) -> list[dict[str, str]]:
@@ -261,32 +349,47 @@ def main() -> int:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.execute("PRAGMA synchronous = NORMAL")
 
-        regions = client.get_regions("")
-        upsert_regions(conn, regions)
-        conn.commit()
-        print(f"regions: {len(regions)}")
+        if not args.refresh and regions_cached(conn, args.ttl_days):
+            regions = cached_regions(conn)
+            print(f"regions cached: {len(regions)}")
+        else:
+            regions = client.get_regions("")
+            upsert_regions(conn, regions)
+            mark_regions_cached(conn)
+            conn.commit()
+            print(f"regions: {len(regions)}")
 
         for region in limited(regions, args.limit_regions):
             region_id = first_value(region, "REGION_ID")
             if not region_id:
                 continue
 
-            districts = client.get_districts(region_id=region_id)
-            upsert_districts(conn, districts)
-            conn.commit()
-            print(f"region {region_id}: districts {len(districts)}")
-            maybe_sleep(args.sleep)
+            if not args.refresh and region_districts_cached(conn, region_id, args.ttl_days):
+                districts = cached_districts(conn, region_id)
+                print(f"region {region_id}: districts cached {len(districts)}")
+            else:
+                districts = client.get_districts(region_id=region_id)
+                upsert_districts(conn, districts)
+                mark_region_districts_cached(conn, region_id)
+                conn.commit()
+                print(f"region {region_id}: districts {len(districts)}")
+                maybe_sleep(args.sleep)
 
             for district in limited(districts, args.limit_districts):
                 district_id = first_value(district, "DISTRICT_ID")
                 if not district_id:
                     continue
 
-                cities = client.get_cities(region_id=region_id, district_id=district_id)
-                upsert_cities(conn, cities)
-                conn.commit()
-                print(f"district {district_id}: cities {len(cities)}")
-                maybe_sleep(args.sleep)
+                if not args.refresh and district_cities_cached(conn, district_id, args.ttl_days):
+                    cities = cached_cities(conn, district_id)
+                    print(f"district {district_id}: cities cached {len(cities)}")
+                else:
+                    cities = client.get_cities(region_id=region_id, district_id=district_id)
+                    upsert_cities(conn, cities)
+                    mark_district_cities_cached(conn, district_id)
+                    conn.commit()
+                    print(f"district {district_id}: cities {len(cities)}")
+                    maybe_sleep(args.sleep)
 
                 for city in limited(cities, args.limit_cities):
                     city_id = first_value(city, "CITY_ID")
