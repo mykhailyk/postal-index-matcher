@@ -9,6 +9,7 @@ from models.magistral_record import MagistralRecord
 from search.normalizer import TextNormalizer
 from search.similarity import SimilarityCalculator
 from search.magistral_loader import MagistralLoader
+from search.ukrposhta_classifier import UkrposhtaClassifierClient
 from utils.logger import Logger
 import config
 
@@ -26,6 +27,7 @@ class HybridSearch:
         self.normalizer = TextNormalizer()
         self.similarity = SimilarityCalculator()
         self.loader = MagistralLoader()
+        self.classifier = UkrposhtaClassifierClient() if config.UKRPOSHTA_CLASSIFIER_ENABLED else None
         self.logger = Logger()
         
         self.magistral_records = []
@@ -152,11 +154,6 @@ class HybridSearch:
         # 1. Отримуємо кандидатів
         candidates = self._get_candidates(address)
         
-        if not candidates:
-            self.logger.info("❌ Кандидатів не знайдено")
-            self.logger.info("=" * 80 + "\n")
-            return self._empty_result()
-        
         # 2. Обчислюємо ЖОРСТКИЙ score
         scored_results = []
         for candidate in candidates:
@@ -165,6 +162,16 @@ class HybridSearch:
             if score >= config.SIMILARITY_THRESHOLD:
                 result = self._create_result(candidate, score, address)
                 scored_results.append(result)
+
+        classifier_results = self._get_classifier_results(address)
+        if classifier_results:
+            self.logger.info(f"💡 Класифікатор Укрпошти додав результатів: {len(classifier_results)}")
+            scored_results.extend(classifier_results)
+
+        if not scored_results:
+            self.logger.info("❌ Кандидатів не знайдено")
+            self.logger.info("=" * 80 + "\n")
+            return self._empty_result()
         
         # 3. Сортуємо за score
         scored_results.sort(key=lambda x: x['score'], reverse=True)
@@ -213,6 +220,10 @@ class HybridSearch:
                 # Оновлюємо auto_result якщо він з'явився (або якщо ми вирішили що загальний підходить)
                 if not auto_result:
                     auto_result = self._find_auto_result(address, scored_results, allow_general=True)
+
+        post_office_recommendation = self._find_post_office_recommendation(address, auto_result, scored_results)
+        if post_office_recommendation:
+            scored_results = self._append_post_office_recommendation(scored_results, post_office_recommendation)
         
         # ============ ЛОГУВАННЯ РЕЗУЛЬТАТІВ ============
         search_mode = 'auto' if auto_result else 'manual'
@@ -824,6 +835,162 @@ class HybridSearch:
             'not_working': record.not_working,
             'is_working': record.is_working()
         }
+
+    def _get_classifier_results(self, address: Address) -> List[Dict]:
+        if not self.classifier:
+            return []
+
+        records = []
+        seen = set()
+
+        query_index = self._normalize_query_index(address.index)
+        if query_index:
+            for item in self.classifier.get_addresses_by_postcode(address.index):
+                record = self._record_from_classifier_address(item)
+                self._add_classifier_record(records, seen, record)
+
+        if address.city and address.street:
+            cities = self._rank_classifier_cities(address)
+            for city in cities[:config.UKRPOSHTA_CLASSIFIER_MAX_CITIES]:
+                for street in self.classifier.get_streets_by_name(city.city_id, address.street)[:config.UKRPOSHTA_CLASSIFIER_MAX_STREETS]:
+                    houses = self.classifier.get_houses_by_street_id(street.street_id, address.building)
+                    if not houses and address.building:
+                        houses = self.classifier.get_houses_by_street_id(street.street_id)
+                    for house_number, postcode in houses[:config.UKRPOSHTA_CLASSIFIER_MAX_RESULTS]:
+                        record = MagistralRecord(
+                            region=street.region or city.region,
+                            new_district=street.district or city.district,
+                            city=f"{street.city_type_short} {street.city}".strip(),
+                            city_index=postcode,
+                            street=f"{street.street_type_short} {street.street}".strip(),
+                            buildings=house_number,
+                        )
+                        self._prepare_classifier_record(record)
+                        self._add_classifier_record(records, seen, record)
+
+        results = []
+        for record in records:
+            score = self._calculate_score_strict(address, record)
+            if score < config.SIMILARITY_THRESHOLD:
+                continue
+            result = self._create_result(record, score, address)
+            result['source'] = 'ukrposhta_classifier'
+            result['source_label'] = 'Класифікатор Укрпошти'
+            results.append(result)
+
+        results.sort(key=lambda r: (r.get('score', 0), r.get('confidence', 0)), reverse=True)
+        return results[:config.UKRPOSHTA_CLASSIFIER_MAX_RESULTS]
+
+    def _rank_classifier_cities(self, address: Address):
+        cities = self.classifier.get_cities_by_name(address.city)
+        query_city = self.normalizer.normalize_city(address.city)
+        query_region = self.normalizer.normalize_region(address.region) if address.region else ""
+        query_district = self.normalizer.normalize_text(address.district) if address.district else ""
+
+        def score(city):
+            value = self.similarity.token_similarity(query_city, self.normalizer.normalize_city(city.city))
+            if city.old_city:
+                value = max(value, self.similarity.token_similarity(query_city, self.normalizer.normalize_city(city.old_city)))
+            if query_region:
+                value += self.similarity.token_similarity(query_region, self.normalizer.normalize_region(city.region)) * 0.25
+            if query_district:
+                value += self.similarity.token_similarity(query_district, self.normalizer.normalize_text(city.district)) * 0.15
+            value += min(city.population, 1000000) / 10000000
+            return value
+
+        return sorted(cities, key=score, reverse=True)
+
+    def _record_from_classifier_address(self, item) -> MagistralRecord:
+        record = MagistralRecord(
+            region=item.region,
+            new_district=item.district,
+            city=f"{item.city_type_short} {item.city}".strip(),
+            city_index=item.postcode,
+            street=f"{item.street_type_short} {item.street}".strip(),
+            buildings=item.house_number,
+        )
+        self._prepare_classifier_record(record)
+        return record
+
+    def _prepare_classifier_record(self, record: MagistralRecord) -> None:
+        record.normalized_city = self.normalizer.normalize_city(record.city)
+        record.normalized_street = self.normalizer.normalize_street(record.street)
+        record.normalized_region = self.normalizer.normalize_region(record.region)
+
+    def _add_classifier_record(self, records: List[MagistralRecord], seen: set, record: MagistralRecord) -> None:
+        key = (
+            self.normalizer.normalize_region(record.region),
+            self.normalizer.normalize_text(record.new_district or record.old_district),
+            self.normalizer.normalize_city(record.city),
+            self.normalizer.normalize_street(record.street),
+            self._normalize_building_for_match(record.buildings),
+            self._normalize_query_index(record.city_index),
+        )
+        if key in seen:
+            return
+        seen.add(key)
+        records.append(record)
+
+    def _find_post_office_recommendation(self, address: Address, auto_result: Dict = None, results: List[Dict] = None) -> Optional[Dict]:
+        if not self.classifier:
+            return None
+
+        anchor = auto_result or (results[0] if results else None)
+        anchor_index = (anchor or {}).get('index') or address.index
+        anchor_not_working = (anchor or {}).get('not_working', '')
+        should_show = bool(anchor_not_working and 'Тимчасово не функціонує' in anchor_not_working)
+        if not should_show and (address.index in ("*", "00000", "01000", "") or not address.index):
+            should_show = bool(address.city)
+        if not should_show:
+            return None
+
+        city_query = (anchor or {}).get('city') or address.city
+        city_candidates = self.classifier.get_cities_by_name(city_query)
+        if not city_candidates and address.city and address.city != city_query:
+            city_candidates = self.classifier.get_cities_by_name(address.city)
+
+        offices = []
+        for city in city_candidates[:config.UKRPOSHTA_CLASSIFIER_MAX_CITIES]:
+            offices.extend(self.classifier.get_post_offices_by_city_id(city.city_id))
+
+        working = [office for office in offices if office.is_working() and office.postcode]
+        if not working:
+            return None
+
+        target_index = self._normalize_query_index(anchor_index)
+
+        def distance(office):
+            office_index = self._normalize_query_index(office.postcode)
+            if target_index and office_index:
+                return abs(int(office_index) - int(target_index))
+            return 0
+
+        best = sorted(working, key=lambda office: (distance(office), office.postcode, office.street))[0]
+        return {
+            'source': 'post_office_recommendation',
+            'source_label': 'Найближче робоче відділення',
+            'is_post_office_recommendation': True,
+            'region': (anchor or {}).get('region', ''),
+            'district': (anchor or {}).get('district', ''),
+            'city': f"{best.city_type_short} {best.city}".strip(),
+            'city_ua': f"{best.city_type_short} {best.city}".strip(),
+            'street': best.street,
+            'street_ua': best.street,
+            'building': best.house_number,
+            'buildings': best.house_number,
+            'index': best.postcode,
+            'score': 0,
+            'confidence': 0,
+            'features': best.type_long or best.type_acronym or 'Робоче відділення',
+            'not_working': '',
+            'is_working': True,
+            'postoffice_id': best.postoffice_id,
+            'anchor_index': anchor_index or '',
+        }
+
+    @staticmethod
+    def _append_post_office_recommendation(results: List[Dict], recommendation: Dict) -> List[Dict]:
+        return [r for r in results if not r.get('is_post_office_recommendation')] + [recommendation]
     
     def get_statistics(self) -> Dict:
         """Повертає статистику системи"""

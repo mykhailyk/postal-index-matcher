@@ -41,6 +41,18 @@ UKRPOSHTA_INDEX_PATH = os.path.join(CACHE_DIR, 'ukrposhta_index.pkl')
 CITY_INDEX_CACHE_PATH = os.path.join(CACHE_DIR, 'city_index.pkl')
 REGION_INDEX_CACHE_PATH = os.path.join(CACHE_DIR, 'region_index.pkl')
 
+# Ukrposhta address classifier API (optional). If the token is empty, the app
+# keeps using only the local magistral.csv cache.
+UKRPOSHTA_CLASSIFIER_BASE_URL = "https://www.ukrposhta.ua/address-classifier-ws"
+UKRPOSHTA_BEARER_TOKEN = os.environ.get("UKRPOSHTA_BEARER_TOKEN", "")
+UKRPOSHTA_CLASSIFIER_ENABLED = bool(UKRPOSHTA_BEARER_TOKEN)
+UKRPOSHTA_CLASSIFIER_TIMEOUT_SECONDS = 20
+UKRPOSHTA_CLASSIFIER_CACHE_PATH = os.path.join(CACHE_DIR, 'ukrposhta_classifier_cache.json')
+UKRPOSHTA_CLASSIFIER_MAX_CITIES = 5
+UKRPOSHTA_CLASSIFIER_MAX_STREETS = 5
+UKRPOSHTA_CLASSIFIER_MAX_RESULTS = 20
+UKRPOSHTA_POST_OFFICE_MAX_RESULTS = 1
+
 # Створюємо директорії якщо їх немає
 for dir_path in [DATA_DIR, CACHE_DIR, LOGS_DIR, COLUMN_MAPPINGS_DIR]:
     os.makedirs(dir_path, exist_ok=True)

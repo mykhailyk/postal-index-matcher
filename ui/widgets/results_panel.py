@@ -209,8 +209,10 @@ class ResultsPanel(QWidget):
             return
         
         max_results = self.result_count_spin.value()
+        regular_results = [r for r in results if not r.get('is_post_office_recommendation')]
+        post_office_results = [r for r in results if r.get('is_post_office_recommendation')]
         
-        for i, result in enumerate(results[:max_results]):
+        for i, result in enumerate(regular_results[:max_results]):
             confidence = result.get('confidence', 0)
             index = result.get('index', '')
             city = result.get('city_ua', '')
@@ -232,6 +234,9 @@ class ResultsPanel(QWidget):
             
             # РЯДОК 1: НП, район, область
             text = f"{icon} {city}"
+            source_label = result.get('source_label', '')
+            if source_label:
+                text += f"\n{source_label}"
             
             if district:
                 text += f", {district} р-н"
@@ -284,6 +289,39 @@ class ResultsPanel(QWidget):
                 item.setForeground(QColor(0, 100, 0))  # Темно-зелений текст
             
             self.results_list.addItem(item)
+
+        for recommendation in post_office_results:
+            self._add_post_office_recommendation_item(recommendation)
+
+    def _add_post_office_recommendation_item(self, result):
+        index = result.get('index', '')
+        city = result.get('city_ua') or result.get('city', '')
+        street = result.get('street_ua') or result.get('street', '')
+        building = result.get('building') or result.get('buildings', '')
+        features = result.get('features', '')
+        anchor_index = result.get('anchor_index', '')
+
+        text = "Найближче робоче відділення"
+        if anchor_index:
+            text += f" до {anchor_index}"
+        text += f"\n{city}"
+        if street or building:
+            text += f"\n{street}, {building}".strip(" ,")
+        text += f"\n{index}"
+        if features:
+            text += f"\n{features}"
+
+        item = QListWidgetItem(text)
+        item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        item.setData(Qt.UserRole, result)
+
+        font = QFont()
+        font.setPointSize(self.font_size)
+        font.setBold(True)
+        item.setFont(font)
+        item.setBackground(QColor(232, 245, 233))
+        item.setForeground(QColor(27, 94, 32))
+        self.results_list.addItem(item)
     
     def on_result_double_clicked(self, item):
         """Обробка подвійного кліку на результат"""

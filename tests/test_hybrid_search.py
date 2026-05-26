@@ -7,6 +7,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from search.hybrid_search import HybridSearch
+from search.ukrposhta_classifier import ClassifierCity, ClassifierStreet, PostOffice
 from models.address import Address
 from models.magistral_record import MagistralRecord
 
@@ -19,6 +20,54 @@ class TestHybridSearch(unittest.TestCase):
         self.search.loader.index_by_region = {}
         self.search._is_loaded = True # Імітуємо що завантажено
         
+    def test_classifier_results_are_added_as_search_candidates(self):
+        class FakeClassifier:
+            def get_addresses_by_postcode(self, postcode):
+                return []
+
+            def get_cities_by_name(self, city):
+                return [ClassifierCity(region="Запорізька", district="", city="Запоріжжя", city_id="1")]
+
+            def get_streets_by_name(self, city_id, street):
+                return [ClassifierStreet(region="Запорізька", city="Запоріжжя", street="Гданська", street_type_short="вул.", street_id="10")]
+
+            def get_houses_by_street_id(self, street_id, house_number=""):
+                return [("5", "69089")]
+
+        self.search.classifier = FakeClassifier()
+
+        results = self.search._get_classifier_results(Address(city="Запоріжжя", street="ГДАНСЬКА", building="5"))
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]['index'], '69089')
+        self.assertEqual(results[0]['source'], 'ukrposhta_classifier')
+
+    def test_post_office_recommendation_prefers_nearest_working_office(self):
+        class FakeClassifier:
+            def get_cities_by_name(self, city):
+                return [ClassifierCity(region="Київська", city="Вишневе", city_id="1")]
+
+            def get_post_offices_by_city_id(self, city_id):
+                return [
+                    PostOffice(postcode="08133", city="Вишневе", street="Центральна", house_number="1", lock_code="1"),
+                    PostOffice(postcode="08134", city="Вишневе", street="Святошинська", house_number="27", lock_code="0"),
+                    PostOffice(postcode="08140", city="Вишневе", street="Європейська", house_number="2", lock_code="0"),
+                ]
+
+        self.search.classifier = FakeClassifier()
+        anchor = {
+            'index': '08133',
+            'city': 'Вишневе',
+            'region': 'Київська',
+            'not_working': 'Тимчасово не функціонує',
+        }
+
+        result = self.search._find_post_office_recommendation(Address(city="Вишневе"), anchor, [anchor])
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result['index'], '08134')
+        self.assertTrue(result['is_post_office_recommendation'])
+
     def test_calculate_score_strict_perfect_match(self):
         """Тест ідеального співпадіння"""
         address = Address(city="Київ", street="Хрещатик", building="1")
