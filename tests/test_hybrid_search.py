@@ -42,6 +42,39 @@ class TestHybridSearch(unittest.TestCase):
         self.assertEqual(results[0]['index'], '69089')
         self.assertEqual(results[0]['source'], 'ukrposhta_classifier')
 
+    def test_classifier_old_street_match_gets_high_confidence(self):
+        class FakeClassifier:
+            def get_addresses_by_postcode(self, postcode):
+                return []
+
+            def get_cities_by_name(self, city):
+                return [ClassifierCity(region="Київ", district="", city="Київ", city_id="1", population=1000000)]
+
+            def get_streets_by_name(self, city_id, street):
+                return [
+                    ClassifierStreet(
+                        region="Київ",
+                        city="Київ",
+                        street="Пасхаліна Юрія",
+                        street_type_short="вул.",
+                        street_id="10",
+                        old_street="Ілліча",
+                    )
+                ]
+
+            def get_houses_by_street_id(self, street_id, house_number=""):
+                return [("23", "02096")]
+
+        self.search.classifier = FakeClassifier()
+
+        results = self.search._get_classifier_results(Address(city="Київ", street="вул.Ілліча", building="23"))
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]['index'], '02096')
+        self.assertEqual(results[0]['confidence'], 99)
+        self.assertEqual(results[0]['matched_old_street'], 'Ілліча')
+        self.assertIn('Пасхаліна Юрія', results[0]['match_reason'])
+
     def test_post_office_recommendation_prefers_nearest_working_office(self):
         class FakeClassifier:
             def get_cities_by_name(self, city):

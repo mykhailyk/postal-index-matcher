@@ -906,17 +906,23 @@ class HybridSearch:
                             street=f"{street.street_type_short} {street.street}".strip(),
                             buildings=house_number,
                         )
+                        record.classifier_old_street = street.old_street
                         self._prepare_classifier_record(record)
                         self._add_classifier_record(records, seen, record)
 
         results = []
         for record in records:
             score = self._calculate_score_strict(address, record)
+            score = max(score, self._classifier_old_street_score(address, record))
             if score < config.SIMILARITY_THRESHOLD:
                 continue
             result = self._create_result(record, score, address)
             result['source'] = 'ukrposhta_classifier'
             result['source_label'] = 'Класифікатор Укрпошти'
+            old_street = getattr(record, 'classifier_old_street', '')
+            if old_street:
+                result['matched_old_street'] = old_street
+                result['match_reason'] = f"Стара назва: {old_street} → {record.street}"
             results.append(result)
 
         results.sort(key=lambda r: (r.get('score', 0), r.get('confidence', 0)), reverse=True)
@@ -957,6 +963,36 @@ class HybridSearch:
         record.normalized_city = self.normalizer.normalize_city(record.city)
         record.normalized_street = self.normalizer.normalize_street(record.street)
         record.normalized_region = self.normalizer.normalize_region(record.region)
+
+    def _classifier_old_street_score(self, address: Address, record: MagistralRecord) -> float:
+        old_street = getattr(record, 'classifier_old_street', '')
+        if not old_street or not address.city or not address.street:
+            return 0.0
+
+        query_city = self.normalizer.normalize_city(address.city)
+        city_similarity = self.similarity.token_similarity(query_city, record.normalized_city)
+        if city_similarity < 0.95:
+            return 0.0
+
+        query_old_street = self.normalizer.normalize_street(address.street)
+        old_street_similarity = self.similarity.token_similarity(
+            query_old_street,
+            self.normalizer.normalize_street(old_street),
+        )
+        if old_street_similarity < 0.95:
+            return 0.0
+
+        if address.building:
+            query_building = self._normalize_building_for_match(address.building)
+            record_buildings = [
+                self._normalize_building_for_match(item)
+                for item in str(record.buildings or "").split(",")
+                if item.strip()
+            ]
+            if query_building not in record_buildings:
+                return 0.0
+
+        return 0.99
 
     def _add_classifier_record(self, records: List[MagistralRecord], seen: set, record: MagistralRecord) -> None:
         key = (
