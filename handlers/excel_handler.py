@@ -3,6 +3,7 @@
 """
 import os
 import pandas as pd
+from openpyxl import load_workbook
 from models.address import Address
 from utils.logger import Logger
 
@@ -47,6 +48,13 @@ class ExcelHandler:
             return str(int(value))
 
         return str(value)
+
+    @classmethod
+    def _cell_text_value(cls, value) -> str:
+        text = cls._to_text_value(value)
+        if isinstance(value, float) and value.is_integer():
+            return str(int(value))
+        return text
 
     @classmethod
     def normalize_text_dataframe(cls, df: pd.DataFrame) -> pd.DataFrame:
@@ -138,6 +146,87 @@ class ExcelHandler:
                 return fallback_path
 
         cls._write_xlsx_as_text(save_df, file_path, include_header=include_header)
+        return file_path
+
+    def save_preserving_original_workbook(
+        self,
+        filtered_df: pd.DataFrame,
+        file_path: str,
+        save_old_index: bool = False,
+    ) -> str:
+        """Save by editing the original workbook so widths, styles, dates and sheet names survive."""
+        if self.original_df is None:
+            raise ValueError("Original DataFrame is required for preserve-workbook save")
+
+        source_path = self.file_path
+        if not source_path or not os.path.exists(source_path):
+            raise ValueError("Original workbook file is not available")
+
+        _, source_ext = os.path.splitext(source_path)
+        _, target_ext = os.path.splitext(file_path)
+        if source_ext.lower() not in (".xlsx", ".xlsm") or target_ext.lower() not in (".xlsx", ".xlsm"):
+            raise ValueError("Preserve-workbook save supports only XLSX/XLSM files")
+
+        workbook = load_workbook(source_path)
+        worksheet = workbook.worksheets[0]
+
+        original_columns = [
+            col for col in self.original_df.columns
+            if col not in ("_original_row_index", "_processed_by_us")
+        ]
+        column_positions = {col: idx + 1 for idx, col in enumerate(original_columns)}
+
+        extra_column_positions = {}
+        old_index_column_name = "Старий індекс"
+        if save_old_index and old_index_column_name in filtered_df.columns and old_index_column_name not in column_positions:
+            new_col = worksheet.max_column + 1
+            extra_column_positions[old_index_column_name] = new_col
+            if self.has_header:
+                worksheet.cell(1, new_col).value = old_index_column_name
+                worksheet.cell(1, new_col).number_format = "@"
+
+        row_offset = 2 if self.has_header else 1
+        service_columns = {"_original_row_index", "_processed_by_us"}
+
+        if "_original_row_index" in filtered_df.columns:
+            row_iter = filtered_df.iterrows()
+        else:
+            row_iter = ((idx, row) for idx, row in filtered_df.iterrows())
+
+        for fallback_idx, row in row_iter:
+            if "_original_row_index" in filtered_df.columns:
+                try:
+                    original_idx = int(row["_original_row_index"])
+                except (TypeError, ValueError):
+                    continue
+            else:
+                original_idx = int(fallback_idx)
+
+            excel_row = original_idx + row_offset
+
+            for col_name in filtered_df.columns:
+                if col_name in service_columns:
+                    continue
+                if col_name == old_index_column_name and not save_old_index:
+                    continue
+
+                excel_col = column_positions.get(col_name) or extra_column_positions.get(col_name)
+                if not excel_col:
+                    continue
+
+                new_value = self._to_text_value(row[col_name])
+                cell = worksheet.cell(excel_row, excel_col)
+
+                # Do not touch cells whose displayed value did not change. This keeps
+                # dates, numeric types, styles and formulas from the original workbook.
+                if self._cell_text_value(cell.value) == new_value:
+                    continue
+
+                cell.value = new_value
+                cell.number_format = "@"
+
+        workbook.save(file_path)
+        self.file_path = file_path
         return file_path
     
     def load_file(self, file_path: str) -> pd.DataFrame:

@@ -167,10 +167,25 @@ class FileManager:
                 
                 # 1. Читаємо оригінальний файл з диска (щоб мати всі дані)
                 # Або використовуємо self.excel_handler.original_df, але краще свіжий
+                filtered_df = self.excel_handler.df
+
+                try:
+                    actual_path = self.excel_handler.save_preserving_original_workbook(
+                        filtered_df,
+                        file_path,
+                        save_old_index=save_old_index,
+                    )
+                    self.current_file = actual_path
+                    self.logger.info(f"Файл збережено зі збереженням оригінального форматування: {actual_path}")
+                    return True
+                except Exception as preserve_error:
+                    self.logger.warning(
+                        f"Не вдалося зберегти через оригінальний workbook, fallback до табличного збереження: {preserve_error}"
+                    )
+
                 df_to_save = self.excel_handler.original_df.copy()
                 
                 # 2. Проходимо по відфільтрованому (і можливо відсортованому) df
-                filtered_df = self.excel_handler.df
                 
                 # Перевіряємо наявність колонки зв'язку
                 if '_original_row_index' not in filtered_df.columns:
