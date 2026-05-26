@@ -15,36 +15,160 @@ class ExcelHandler:
         self.file_path = None
         self.column_mapping = None
         self.logger = Logger()
+        self.has_header = True
         
         # Для "розумного збереження"
         self.original_df = None
         self.field_to_col_name = {}  # {field: original_col_name}
+
+    @staticmethod
+    def _read_engine_for(file_path: str):
+        """Return an explicit engine when pandas needs one."""
+        _, ext = os.path.splitext(file_path)
+        ext = ext.lower()
+        if ext == ".xls":
+            return "xlrd"
+        if ext in (".xlsx", ".xlsm"):
+            return "openpyxl"
+        return None
+
+    @staticmethod
+    def _to_text_value(value) -> str:
+        """Normalize a cell value for display/save without losing leading zeroes."""
+        if value is None:
+            return ""
+        try:
+            if pd.isna(value):
+                return ""
+        except (TypeError, ValueError):
+            pass
+
+        if isinstance(value, float) and value.is_integer():
+            return str(int(value))
+
+        return str(value)
+
+    @classmethod
+    def normalize_text_dataframe(cls, df: pd.DataFrame) -> pd.DataFrame:
+        """Keep every cell as text and replace real missing values with empty strings."""
+        normalized = df.copy()
+        normalized.columns = [cls._to_text_value(col) for col in normalized.columns]
+        return normalized.apply(lambda col: col.map(cls._to_text_value))
+
+    @staticmethod
+    def _is_sequence_header(labels) -> bool:
+        if not labels:
+            return False
+        return all(str(label).strip() == str(idx + 1) for idx, label in enumerate(labels))
+
+    @classmethod
+    def _looks_headerless(cls, header_df: pd.DataFrame) -> bool:
+        """Detect files where the first data row was accidentally read as headers."""
+        labels = [cls._to_text_value(label).strip() for label in header_df.columns]
+        if cls._is_sequence_header(labels):
+            return False
+
+        data_like = 0
+        for label in labels:
+            if not label or label.lower().startswith("unnamed:"):
+                data_like += 1
+                continue
+
+            digits = "".join(ch for ch in label if ch.isdigit())
+            if len(digits) >= 5:
+                data_like += 1
+                continue
+
+            if len(label) >= 25 and " " in label:
+                data_like += 1
+
+        return data_like >= max(1, len(labels) // 3)
+
+    @classmethod
+    def _read_excel_text(cls, file_path: str):
+        read_kwargs = {
+            "dtype": str,
+            "keep_default_na": False,
+            "na_filter": False,
+        }
+        engine = cls._read_engine_for(file_path)
+        if engine:
+            read_kwargs["engine"] = engine
+
+        header_df = pd.read_excel(file_path, **read_kwargs)
+        if not cls._looks_headerless(header_df):
+            return header_df, True
+
+        raw_df = pd.read_excel(file_path, header=None, **read_kwargs)
+        raw_df.columns = [str(idx + 1) for idx in range(len(raw_df.columns))]
+        return raw_df, False
+
+    @classmethod
+    def _write_xlsx_as_text(cls, df: pd.DataFrame, file_path: str, include_header: bool = True):
+        save_df = cls.normalize_text_dataframe(df)
+        with pd.ExcelWriter(file_path, engine="openpyxl") as writer:
+            save_df.to_excel(writer, index=False, header=include_header)
+            worksheet = writer.book.active
+            for row in worksheet.iter_rows():
+                for cell in row:
+                    cell.number_format = "@"
+
+    @classmethod
+    def write_dataframe(cls, df: pd.DataFrame, file_path: str, include_header: bool = True) -> str:
+        """Write Excel reliably, preserving text values. Returns the actual path used."""
+        if df is None:
+            raise ValueError("No data to save")
+
+        save_df = cls.normalize_text_dataframe(df)
+        root, ext = os.path.splitext(file_path)
+        ext = ext.lower()
+
+        if ext == ".xls":
+            if len(save_df) > 65536:
+                fallback_path = root + ".xlsx"
+                cls._write_xlsx_as_text(save_df, fallback_path, include_header=include_header)
+                return fallback_path
+
+            try:
+                save_df.to_excel(file_path, index=False, header=include_header, engine="xlwt")
+                return file_path
+            except (ImportError, ModuleNotFoundError, ValueError):
+                fallback_path = root + ".xlsx"
+                cls._write_xlsx_as_text(save_df, fallback_path, include_header=include_header)
+                return fallback_path
+
+        cls._write_xlsx_as_text(save_df, file_path, include_header=include_header)
+        return file_path
     
     def load_file(self, file_path: str) -> pd.DataFrame:
         """Завантажує Excel файл з ЗБЕРЕЖЕННЯМ НУЛІВ"""
         try:
-            # Читаємо як текст, щоб поштові індекси на кшталт 01001 не втрачали початкові нулі.
-            self.df = pd.read_excel(
-                file_path,
-                dtype=str,
-                keep_default_na=False,
-                na_values=['']  # Тільки пусті рядки як NaN
-            )
-            
-            # ✅ Замінюємо NaN на пусті рядки (для коректного відображення в UI)
-            self.df = self.df.fillna("")
-            
-            # ✅ ВИДАЛІТЬ ПУСТІ РЯДКИ
-            non_empty_rows = self.df.apply(
-                lambda row: any(str(value).strip() for value in row),
-                axis=1
-            )
-            self.df = self.df[non_empty_rows].reset_index(drop=True)
+            previous_columns = list(self.df.columns) if self.df is not None else None
+            previous_mapping = self.column_mapping
+
+            loaded_df, self.has_header = self._read_excel_text(file_path)
+            self.df = loaded_df
+            self.df = self.normalize_text_dataframe(self.df)
+
+            # A new file may have a different column order. Keep mapping only when
+            # the structure is identical, otherwise force the user to remap.
+            if previous_columns != list(self.df.columns):
+                self.column_mapping = None
+                self.field_to_col_name = {}
+            else:
+                self.column_mapping = previous_mapping
+
+            self.original_df = None
             
             self.file_path = file_path
             self.logger.info(f"✓ Завантажено файл: {file_path}")
             self.logger.info(f"✓ Рядків: {len(self.df)}")
             self.logger.info(f"✓ Колон: {len(self.df.columns)}")
+            if not self.has_header:
+                self.logger.info("✓ Файл розпізнано як таблицю без рядка заголовків")
+            empty_rows = self.df.apply(lambda row: not any(str(value).strip() for value in row), axis=1).sum()
+            if empty_rows:
+                self.logger.info(f"✓ Порожні рядки збережено у таблиці: {empty_rows}")
             
             # ✅ ЛОГУВАННЯ - показуємо скільки даних
             for col in self.df.columns:
@@ -71,24 +195,9 @@ class ExcelHandler:
             raise ValueError("Не вказано шлях для збереження")
         
         try:
-            # ⬇️ ДОДАНО: Визначаємо розширення файлу
-            _, ext = os.path.splitext(save_path)
-            
-            if ext.lower() == '.xls':
-                # Зберігаємо в XLS (старий формат)
-                try:
-                    self.df.to_excel(save_path, index=False, engine='xlwt')
-                    self.logger.info(f"Файл збережено як XLS: {save_path}")
-                except (ImportError, ValueError):
-                    save_path = os.path.splitext(save_path)[0] + ".xlsx"
-                    self.df.to_excel(save_path, index=False, engine='openpyxl')
-                    self.file_path = save_path
-                    self.logger.info(f"XLS не підтримується поточною версією pandas; файл збережено як XLSX: {save_path}")
-            else:
-                # Зберігаємо в XLSX (новий формат)
-                self.df.to_excel(save_path, index=False, engine='openpyxl')
-                self.logger.info(f"Файл збережено як XLSX: {save_path}")
-                
+            actual_path = self.write_dataframe(self.df, save_path, include_header=self.has_header)
+            self.file_path = actual_path
+            self.logger.info(f"Файл збережено: {actual_path}")
         except Exception as e:
             self.logger.error(f"Помилка збереження файлу {save_path}: {e}")
             raise
@@ -101,6 +210,27 @@ class ExcelHandler:
     
     def set_column_mapping(self, mapping: dict):
         """Встановлює відповідність між полями та стовпцями"""
+        if self.df is not None:
+            column_count = len(self.df.columns)
+            safe_mapping = {}
+            for field, col_indices in (mapping or {}).items():
+                if not isinstance(col_indices, (list, tuple)):
+                    continue
+
+                safe_indices = []
+                for col_idx in col_indices:
+                    try:
+                        safe_idx = int(col_idx)
+                    except (TypeError, ValueError):
+                        continue
+                    if 0 <= safe_idx < column_count:
+                        safe_indices.append(safe_idx)
+
+                if safe_indices:
+                    safe_mapping[field] = safe_indices
+
+            mapping = safe_mapping
+
         self.column_mapping = mapping
         self.logger.info(f"Column mapping встановлено: {mapping}")
         

@@ -218,49 +218,16 @@ class FileManager:
             else:
                 self.logger.info("Колонка 'Старий індекс' збережена у файл")
             
-            # Визначаємо розширення файлу
-            _, ext = os.path.splitext(file_path)
-            
-            # Збереження
-            if ext.lower() == '.xls':
-                # XLS підтримка
-                if len(df_to_save) > 65536:
-                    self.logger.error("XLS формат підтримує максимум 65536 рядків")
-                    return False
-                
-                try:
-                    __import__('xlwt')
-                    df_to_save.to_excel(file_path, index=False, engine='xlwt')
-                except (ImportError, ValueError) as e:
-                    self.logger.error(f"Помилка збереження XLS: {e}")
-                    
-                    should_save_xlsx = parent is None
-                    if parent:
-                        reply = QMessageBox.question(
-                            parent, 
-                            "Помилка збереження XLS",
-                            "На жаль, збереження у застарілому форматі .xls не підтримується.\n"
-                            "Зберегти файл у новому форматі .xlsx?",
-                            QMessageBox.Yes | QMessageBox.No
-                        )
-                        should_save_xlsx = reply == QMessageBox.Yes
-
-                    if should_save_xlsx:
-                        new_path = os.path.splitext(file_path)[0] + ".xlsx"
-                        df_to_save.to_excel(new_path, index=False, engine='openpyxl')
-                        self.logger.info(f"Файл збережено як XLSX: {new_path}")
-                        
-                        self.current_file = new_path
-                            
-                        return True
-                    
-                    return False
+            actual_path = self.excel_handler.write_dataframe(
+                df_to_save,
+                file_path,
+                include_header=self.excel_handler.has_header,
+            )
+            if actual_path != file_path:
+                self.logger.info(f"Файл збережено як XLSX: {actual_path}")
             else:
-                # XLSX формат
-                df_to_save.to_excel(file_path, index=False, engine='openpyxl')
-            
-            self.logger.info(f"Файл збережено: {file_path}")
-            self.current_file = file_path
+                self.logger.info(f"Файл збережено: {actual_path}")
+            self.current_file = actual_path
             return True
             
         except Exception as e:
